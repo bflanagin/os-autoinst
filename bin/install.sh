@@ -18,50 +18,9 @@ apt-get -y -q install ninja-build cmake autoconf atool
 
 clear
 
-echo "Installing openCV"
+echo "Installing openCV and componets"
 
-apt-get -y -q install libopencv-calib3d-dev \
-libopencv-calib3d4.5 \
-libopencv-contrib-dev \
-libopencv-contrib4.5 \
-libopencv-core-dev \
-libopencv-core4.5 \
-libopencv-dev \
-libopencv-dnn-dev \
-libopencv-dnn4.5 \
-libopencv-features2d-dev \
-libopencv-features2d4.5 \
-libopencv-flann-dev \
-libopencv-flann4.5 \
-libopencv-highgui-dev \
-libopencv-highgui4.5 \
-libopencv-imgcodecs-dev \
-libopencv-imgcodecs4.5 \
-libopencv-imgproc-dev \
-libopencv-imgproc4.5 \
-libopencv-ml-dev \
-libopencv-ml4.5 \
-libopencv-objdetect-dev \
-libopencv-objdetect4.5 \
-libopencv-photo-dev \
-libopencv-photo4.5 \
-libopencv-shape-dev \
-libopencv-shape4.5 \
-libopencv-stitching-dev \
-libopencv-stitching4.5 \
-libopencv-superres-dev \
-libopencv-superres4.5 \
-libopencv-video-dev \
-libopencv-video4.5 \
-libopencv-videoio-dev \
-libopencv-videoio4.5 \
-libopencv-videostab-dev \
-libopencv-videostab4.5 \
-libopencv-viz-dev \
-libopencv-viz4.5 \
-libopencv4.5-java \
-libopencv4.5-jni \
-opencv-data 
+apt-get -y -q install libopencv-dev opencv-data libtheora-dev libsndfile1-dev libfftw3-dev
 
 echo "Installing Tesseract OCR"
 
@@ -577,6 +536,10 @@ apt-get -y -q install libmojo-ioloop-readwriteprocess-perl libmojo-pg-perl, libm
  adduser system76 kvm
  
  clear
+ 
+ echo "Running Cmake"
+ 
+ cmake ./
  
  echo "Ready for install. Run make and then sudo make install to complete installation" 
  
