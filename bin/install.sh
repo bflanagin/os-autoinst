@@ -541,5 +541,7 @@ apt-get -y -q install libmojo-ioloop-readwriteprocess-perl libmojo-pg-perl, libm
  
  cmake ./
  
- echo "Ready for install. Run make and then sudo make install to complete installation" 
+ echo "Running make && make install"
  
+ make 
+ make install
