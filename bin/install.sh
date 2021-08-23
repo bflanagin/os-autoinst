@@ -12,6 +12,224 @@ echo "Installing prerequisites"
 
 clear 
 
+echo "Installing build tools"
+
+apt-get -y -q install ninja-build cmake autoconf atool
+
+clear
+
+echo "Installing openCV"
+
+apt-get -y -q install libopencv-calib3d-dev \
+libopencv-calib3d4.5 \
+libopencv-contrib-dev \
+libopencv-contrib4.5 \
+libopencv-core-dev \
+libopencv-core4.5 \
+libopencv-dev \
+libopencv-dnn-dev \
+libopencv-dnn4.5 \
+libopencv-features2d-dev \
+libopencv-features2d4.5 \
+libopencv-flann-dev \
+libopencv-flann4.5 \
+libopencv-highgui-dev \
+libopencv-highgui4.5 \
+libopencv-imgcodecs-dev \
+libopencv-imgcodecs4.5 \
+libopencv-imgproc-dev \
+libopencv-imgproc4.5 \
+libopencv-ml-dev \
+libopencv-ml4.5 \
+libopencv-objdetect-dev \
+libopencv-objdetect4.5 \
+libopencv-photo-dev \
+libopencv-photo4.5 \
+libopencv-shape-dev \
+libopencv-shape4.5 \
+libopencv-stitching-dev \
+libopencv-stitching4.5 \
+libopencv-superres-dev \
+libopencv-superres4.5 \
+libopencv-video-dev \
+libopencv-video4.5 \
+libopencv-videoio-dev \
+libopencv-videoio4.5 \
+libopencv-videostab-dev \
+libopencv-videostab4.5 \
+libopencv-viz-dev \
+libopencv-viz4.5 \
+libopencv4.5-java \
+libopencv4.5-jni \
+opencv-data 
+
+echo "Installing Tesseract OCR"
+
+apt-get -y -q install libtesseract4 \
+tesseract-ocr-afr \
+tesseract-ocr-all \
+tesseract-ocr-amh \
+tesseract-ocr-ara \
+tesseract-ocr-asm \
+tesseract-ocr-aze-cyrl \
+tesseract-ocr-aze \
+tesseract-ocr-bel \
+tesseract-ocr-ben \
+tesseract-ocr-bod \
+tesseract-ocr-bos \
+tesseract-ocr-bre \
+tesseract-ocr-bul \
+tesseract-ocr-cat \
+tesseract-ocr-ceb \
+tesseract-ocr-ces \
+tesseract-ocr-chi-sim-vert \
+tesseract-ocr-chi-sim \
+tesseract-ocr-chi-tra-vert \
+tesseract-ocr-chi-tra \
+tesseract-ocr-chr \
+tesseract-ocr-cos \
+tesseract-ocr-cym \
+tesseract-ocr-dan \
+tesseract-ocr-deu \
+tesseract-ocr-div \
+tesseract-ocr-dzo \
+tesseract-ocr-ell \
+tesseract-ocr-eng \
+tesseract-ocr-enm \
+tesseract-ocr-epo \
+tesseract-ocr-est \
+tesseract-ocr-eus \
+tesseract-ocr-fao \
+tesseract-ocr-fas \
+tesseract-ocr-fil \
+tesseract-ocr-fin \
+tesseract-ocr-fra \
+tesseract-ocr-frk \
+tesseract-ocr-frm \
+tesseract-ocr-fry \
+tesseract-ocr-gla \
+tesseract-ocr-gle \
+tesseract-ocr-glg \
+tesseract-ocr-grc \
+tesseract-ocr-guj \
+tesseract-ocr-hat \
+tesseract-ocr-heb \
+tesseract-ocr-hin \
+tesseract-ocr-hrv \
+tesseract-ocr-hun \
+tesseract-ocr-hye \
+tesseract-ocr-iku \
+tesseract-ocr-ind \
+tesseract-ocr-isl \
+tesseract-ocr-ita-old \
+tesseract-ocr-ita \
+tesseract-ocr-jav \
+tesseract-ocr-jpn-vert \
+tesseract-ocr-jpn \
+tesseract-ocr-kan \
+tesseract-ocr-kat-old \
+tesseract-ocr-kat \
+tesseract-ocr-kaz \
+tesseract-ocr-khm \
+tesseract-ocr-kir \
+tesseract-ocr-kmr \
+tesseract-ocr-kor-vert \
+tesseract-ocr-kor \
+tesseract-ocr-lao \
+tesseract-ocr-lat \
+tesseract-ocr-lav \
+tesseract-ocr-lit \
+tesseract-ocr-ltz \
+tesseract-ocr-mal \
+tesseract-ocr-mar \
+tesseract-ocr-mkd \
+tesseract-ocr-mlt \
+tesseract-ocr-mon \
+tesseract-ocr-mri \
+tesseract-ocr-msa \
+tesseract-ocr-mya \
+tesseract-ocr-nep \
+tesseract-ocr-nld \
+tesseract-ocr-nor \
+tesseract-ocr-oci \
+tesseract-ocr-ori \
+tesseract-ocr-osd \
+tesseract-ocr-pan \
+tesseract-ocr-pol \
+tesseract-ocr-por \
+tesseract-ocr-pus \
+tesseract-ocr-que \
+tesseract-ocr-ron \
+tesseract-ocr-rus \
+tesseract-ocr-san \
+tesseract-ocr-script-arab \
+tesseract-ocr-script-armn \
+tesseract-ocr-script-beng \
+tesseract-ocr-script-cans \
+tesseract-ocr-script-cher \
+tesseract-ocr-script-cyrl \
+tesseract-ocr-script-deva \
+tesseract-ocr-script-ethi \
+tesseract-ocr-script-frak \
+tesseract-ocr-script-geor \
+tesseract-ocr-script-grek \
+tesseract-ocr-script-gujr \
+tesseract-ocr-script-guru \
+tesseract-ocr-script-hang-vert \
+tesseract-ocr-script-hang \
+tesseract-ocr-script-hans-vert \
+tesseract-ocr-script-hans \
+tesseract-ocr-script-hant-vert \
+tesseract-ocr-script-hant \
+tesseract-ocr-script-hebr \
+tesseract-ocr-script-jpan-vert \
+tesseract-ocr-script-jpan \
+tesseract-ocr-script-khmr \
+tesseract-ocr-script-knda \
+tesseract-ocr-script-laoo \
+tesseract-ocr-script-latn \
+tesseract-ocr-script-mlym \
+tesseract-ocr-script-mymr \
+tesseract-ocr-script-orya \
+tesseract-ocr-script-sinh \
+tesseract-ocr-script-syrc \
+tesseract-ocr-script-taml \
+tesseract-ocr-script-telu \
+tesseract-ocr-script-thaa \
+tesseract-ocr-script-thai \
+tesseract-ocr-script-tibt \
+tesseract-ocr-script-viet \
+tesseract-ocr-sin \
+tesseract-ocr-slk \
+tesseract-ocr-slv \
+tesseract-ocr-snd \
+tesseract-ocr-spa-old \
+tesseract-ocr-spa \
+tesseract-ocr-sqi \
+tesseract-ocr-srp-latn \
+tesseract-ocr-srp \
+tesseract-ocr-sun \
+tesseract-ocr-swa \
+tesseract-ocr-swe \
+tesseract-ocr-syr \
+tesseract-ocr-tam \
+tesseract-ocr-tat \
+tesseract-ocr-tel \
+tesseract-ocr-tgk \
+tesseract-ocr-tha \
+tesseract-ocr-tir \
+tesseract-ocr-ton \
+tesseract-ocr-tur \
+tesseract-ocr-uig \
+tesseract-ocr-ukr \
+tesseract-ocr-urd \
+tesseract-ocr-uzb-cyrl \
+tesseract-ocr-uzb \
+tesseract-ocr-vie \
+tesseract-ocr-yid \
+tesseract-ocr-yor \
+tesseract-ocr
+
 echo "Installing Pearl packages"
 
 apt-get -y -q install libalgorithm-c3-perl \
