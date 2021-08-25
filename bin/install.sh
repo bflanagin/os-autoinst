@@ -545,3 +545,6 @@ apt-get -y -q install libmojo-ioloop-readwriteprocess-perl libmojo-pg-perl, libm
  
  make 
  make install
+ 
+ echo " Symlinking tools to /usr/bin "
+ ln -s /usr/local/bin/* /usr/bin/
