@@ -20,7 +20,7 @@ use base Exporter;
 use Carp;
 use Exporter;
 use 5.018;
-use warnings;
+use Mojo::Base -strict;
 use File::Basename qw(basename dirname);
 use File::Path 'make_path';
 use Time::HiRes qw(sleep gettimeofday tv_interval);
@@ -2141,12 +2141,12 @@ sub diag {
 
 =for stopwords kvm VM
 
-    Return VM's host IP
-    in a kvm instance you reach the VM's host under default 10.0.2.2
+Return VM's host IP.
+In a kvm instance you reach the VM's host under default 10.0.2.2
+
 =cut
-sub host_ip {
-    return check_var('BACKEND', 'qemu') ? get_var('QEMU_HOST_IP', '10.0.2.2') : get_required_var('WORKER_HOSTNAME');
-}
+
+sub host_ip { check_var('BACKEND', 'qemu') ? get_var('QEMU_HOST_IP', '10.0.2.2') : get_required_var('WORKER_HOSTNAME') }
 
 =head2 autoinst_url
 
@@ -2193,15 +2193,8 @@ in the corresponding variable
 
 sub data_url($) {
     my ($name) = @_;
-    if ($name =~ /^REPO_\d$/) {
-        return autoinst_url("/assets/repo/" . get_var($name));
-    }
-    if ($name =~ /^ASSET_\d$/) {
-        return autoinst_url("/assets/other/" . get_var($name));
-    }
-    else {
-        return autoinst_url("/data/$name");
-    }
+    autoinst_url($name =~ /^REPO_\d$/ ? "/assets/repo/" . get_var($name) :
+          $name =~ /^ASSET_\d$/ ? "/assets/other/" . get_var($name) : "/data/$name");
 }
 
 
@@ -2303,7 +2296,9 @@ from positional arguments to named one.
 A typical call would look like:
 
     my %args = compat_args({timeout => 60, .. }, ['timeout'], @_);
+
 =cut
+
 sub compat_args {
     my ($def_args, $fix_keys) = splice(@_, 0, 2);
     my %ret;
@@ -2327,7 +2322,9 @@ This works only when uploading where the output is not lately used.
 A typical call would look like:
 
     $cmd .= show_curl_progress_meter($cmd);
+
 =cut
+
 sub show_curl_progress_meter { get_var('UPLOAD_METER') ? "-o /dev/$serialdev " : '' }
 
 1;
