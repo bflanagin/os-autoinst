@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use Test::Most;
+use Mojo::Base -strict, -signatures;
 use FindBin '$Bin';
 use lib "$Bin/../external/os-autoinst-common/lib";
 use OpenQA::Test::TimeLimit '5';
@@ -75,7 +76,7 @@ subtest 'XML config for VNC and serial console' => sub {
     $svirt_console->add_pty({pty_dev     => SERIAL_TERMINAL_DEFAULT_DEVICE, pty_dev_type => 'pty', target_port => SERIAL_TERMINAL_DEFAULT_PORT});
 
     my $produced_xml = $svirt_console->{domainxml}->toString(2);
-    my $expected_xml = "$Bin/22-svirth-virsh-config.xml";
+    my $expected_xml = "$Bin/22-svirt-virsh-config.xml";
 
     my $diff = XML::SemanticDiff->new(keeplinenums => 1);
     if (my @changes = $diff->compare($produced_xml, $expected_xml)) {
@@ -165,6 +166,32 @@ subtest 'SSH usage in console::sshVirtsh' => sub {
         $run_ssh_cmd_return = [undef, 'STDOUT', undef];
         is_deeply($svirt_vmware_console->get_cmd_output('echo -n "BLAFAFU"', {domain => 'sshVMwareServer'}), 'STDOUT', "sshVirtsh::get_cmd_output() Check use of VMWARE credentials");
     }
+};
+
+subtest 'Methods backend::svirt::attach_to_running, start_serial_grab and stop_serial_grab' => sub {
+    my $backend_mock = Test::MockObject->new->set_true('start_serial_grab')->set_true('stop_serial_grab');
+    $svirt_console->backend($backend_mock);
+    $svirt_console->attach_to_running;
+    $backend_mock->called_ok('start_serial_grab', 'serial grab attempted');
+    is $bmwqemu::vars{SVIRT_KEEP_VM_RUNNING}, 1, 'destructon of VM prevented by default';
+
+    $svirt_console->attach_to_running('foobar');
+    is $svirt_console->name, 'foobar', 'console name set';
+
+    $bmwqemu::vars{SVIRT_KEEP_VM_RUNNING} = 0;
+    $svirt_console->attach_to_running({name => 'barfoo', stop_vm => 1});
+    is $svirt_console->name, 'barfoo', 'console name set (2)';
+    is $bmwqemu::vars{SVIRT_KEEP_VM_RUNNING}, 0, 'VM not kept running';
+
+    $backend_mock->clear;
+    $svirt_console->start_serial_grab;
+    $backend_mock->called_ok('start_serial_grab', 'start serial grab');
+    $backend_mock->called_args_pos_is(0, 2, 'barfoo', 'name passed to start serial grab');
+
+    $backend_mock->clear;
+    $svirt_console->stop_serial_grab;
+    $backend_mock->called_ok('stop_serial_grab', 'stop serial grab');
+    $backend_mock->called_args_pos_is(0, 2, 'barfoo', 'name passed to stop serial grab');
 };
 
 subtest 'Method backend::svirt::open_serial_console_via_ssh()' => sub {

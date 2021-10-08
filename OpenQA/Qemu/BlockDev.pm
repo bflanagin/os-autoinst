@@ -1,17 +1,5 @@
-# Copyright © 2018-2021 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2018-2021 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 =head2 OpenQA::Qemu::BlockDev
 
@@ -33,7 +21,7 @@ weakened.
 =cut
 
 package OpenQA::Qemu::BlockDev;
-use Mojo::Base 'OpenQA::Qemu::MutParams';
+use Mojo::Base 'OpenQA::Qemu::MutParams', -signatures;
 
 use Scalar::Util 'weaken';
 use OpenQA::Qemu::SnapshotConf;
@@ -158,13 +146,15 @@ creating.
 
 =cut
 sub gen_qemu_img_cmdlines {
-    my $self   = shift;
-    my @cmdlns = defined $self->backing_file ? $self->backing_file->gen_qemu_img_cmdlines : ();
+    my $self = shift;
+
+    my $backing_file = $self->backing_file;
+    my @cmdlns       = defined $backing_file ? $backing_file->gen_qemu_img_cmdlines : ();
     return @cmdlns unless $self->needs_creating;
 
     my @params = ('create', '-f', $self->driver);
-    push(@params, ('-b', $self->backing_file->file))
-      if defined $self->backing_file;
+    push(@params, '-F', $backing_file->driver, '-b', $backing_file->file)
+      if defined $backing_file;
     push(@params, $self->file);
     push(@params, $self->size);
 
@@ -213,6 +203,8 @@ sub _from_map {
       ->implicit($this->{implicit})
       ->snapshot($snap_conf->get_snapshot(sequence => $this->{snapshot}));
 }
+
+sub deduce_driver ($self) { $self->driver($self->file =~ qr/\.qcow2$/ ? 'qcow2' : 'raw') }
 
 sub CARP_TRACE { 'OpenQA::Qemu::BlockDev(' . (shift->node_name || '') . ')' }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-use 5.018;
 use Test::Most;
+use Mojo::Base -strict, -signatures;
 
 use FindBin '$Bin';
 use lib "$Bin/../external/os-autoinst-common/lib";
@@ -97,7 +97,7 @@ subtest 'execute arbitrary QMP command' => sub {
 subtest 'process_qemu_output' => sub {
     my $qemu_log = <<'EOF';
 QEMU emulator version 4.2.1 (openSUSE Leap 15.2)
-Copyright (c) 2003-2019 Fabrice Bellard and the QEMU Project developers
+Copyright 2003-2019 Fabrice Bellard and the QEMU Project developers
 qemu-system-x86_64: cannot set up guest memory 'pc.ram': Cannot allocate memory
 EOF
     my $expected = qr/\[debug\].*QEMU emulator version.*\[warn\].*Cannot allocate memory/s;

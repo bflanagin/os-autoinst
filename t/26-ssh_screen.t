@@ -1,7 +1,8 @@
 #!/usr/bin/perl
-# Copyright © 2019 SUSE LLC
+# Copyright 2019 SUSE LLC
 
 use Test::Most;
+use Mojo::Base -strict, -signatures;
 use FindBin '$Bin';
 use lib "$Bin/../external/os-autoinst-common/lib";
 use OpenQA::Test::TimeLimit '5';

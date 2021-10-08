@@ -1,18 +1,6 @@
-# Copyright © 2009-2013 Bernhard M. Wiedemann
-# Copyright © 2012-2021 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2009-2013 Bernhard M. Wiedemann
+# Copyright 2012-2021 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 package autotest;
 
@@ -113,6 +101,7 @@ sub loadtest {
     my $basename = dirname($script_path);
     $code .= "use lib '$basename';";
     die "Unsupported file extension for '$script'" unless $script =~ /\.p[my]/;
+    my $is_python = 0;
     if ($script =~ m/\.pm$/) {
         $code .= "require '$script_path';";
     }
@@ -125,10 +114,15 @@ sub loadtest {
             use Inline Python => 'import sys; sys.path.append(\"$inc\")';
             use Inline Python => path('$casedir/$script')->slurp;
             ";
+        $is_python = 1;
     }
     eval $code;
-    if ($@) {
-        my $msg = "error on $script: $@";
+    if (my $err = $@) {
+        if ($is_python) {
+            eval "use Inline Python => 'sys.stderr.flush()';";
+            bmwqemu::fctwarn("Unable to flush Python's stderr, error message from Python might be missing: $@") if $@;    # uncoverable statement
+        }
+        my $msg = "error on $script: $err";
         bmwqemu::fctwarn($msg);
         bmwqemu::serialize_state(component => 'tests', msg => "unable to load $script, check the log for the cause (e.g. syntax error)");
         die $msg;

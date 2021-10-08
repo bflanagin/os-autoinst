@@ -1,18 +1,6 @@
-# Copyright © 2009-2013 Bernhard M. Wiedemann
-# Copyright © 2012-2020 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2009-2013 Bernhard M. Wiedemann
+# Copyright 2012-2021 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # this is an abstract class
 package backend::baseclass;
@@ -40,6 +28,8 @@ use List::MoreUtils 'uniq';
 use Scalar::Util 'looks_like_number';
 use Mojo::File 'path';
 use OpenQA::Exceptions;
+use Time::Seconds;
+use English -no_match_vars;
 
 # should be a singleton - and only useful in backend process
 our $backend;
@@ -841,15 +831,15 @@ sub proxy_console_call {
     return $wrapped_result;
 }
 
-=head2 set_serial_offset
+=head2 clear_serial_buffer
 
 Determines the starting offset within the serial file - so that we do not check the
 previous test's serial output. Call this before you start doing something new
 
 =cut
 
-sub set_serial_offset {
-    my ($self, $args) = @_;
+sub clear_serial_buffer {
+    my ($self) = @_;
 
     $self->{serial_offset} = -s $self->{serialfile};
     return $self->{serial_offset};
@@ -858,7 +848,7 @@ sub set_serial_offset {
 
 =head2 serial_text
 
-Returns the output on the serial device since the last call to set_serial_offset
+Returns the output on the serial device since the last call to clear_serial_buffer
 
 =cut
 
@@ -900,20 +890,27 @@ sub wait_serial {
     }
 
     $regexp = [$regexp] if ref $regexp ne 'ARRAY';
-    my $initial_time = time;
+    my $initial_time   = time;
+    my $current_offset = $self->{serial_offset};
     while (time < $initial_time + $timeout) {
         $str = $self->serial_text();
         for my $r (@$regexp) {
-            $matched = ref $r eq 'Regexp' ? $str =~ $r : $str =~ m/$r/;
-            if ($matched) {
-                $regexp = "$r";
+            if (!$args->{no_regex} && $str =~ m/$r/) {
+                $current_offset += $LAST_MATCH_END[0];
+                $str     = substr($str, 0, $LAST_MATCH_END[0]);
+                $matched = 1;
+                last;
+            } elsif ($args->{no_regex} && (my $i = index($str, $r)) >= 0) {
+                $current_offset += length($r) + $i;
+                $str     = substr($str, 0, $i + length($r));
+                $matched = 1;
                 last;
             }
         }
         last if ($matched);
         $self->run_capture_loop(1);
     }
-    $self->set_serial_offset();
+    $self->{serial_offset} = $current_offset;
     return {matched => $matched, string => $str};
 }
 
@@ -1240,7 +1237,8 @@ sub new_ssh_connection {
         }
     }
 
-    my $ssh = Net::SSH2->new;
+    # timeout requires libssh2 >= 1.2.9 so not all versions might have it
+    my $ssh = Net::SSH2->new(timeout => ($bmwqemu::vars{SSH_COMMAND_TIMEOUT_S} // 5 * ONE_MINUTE) * 1000);
 
     # Retry multiple times, in case of the guest is not running yet
     my $counter    = $bmwqemu::vars{SSH_CONNECT_RETRY} // 5;

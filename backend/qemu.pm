@@ -1,18 +1,6 @@
-# Copyright © 2009-2013 Bernhard M. Wiedemann
-# Copyright © 2012-2021 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2009-2013 Bernhard M. Wiedemann
+# Copyright 2012-2021 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 package backend::qemu;
 
@@ -560,7 +548,7 @@ sub start_qemu {
         }
         else {
             (my $class = $vars->{WORKER_CLASS} || '') =~ s/qemu_/qemu-system\-/g;
-            my @execs   = qw(kvm qemu-kvm qemu qemu-system-x86_64 qemu-system-ppc64);
+            my @execs   = qw(kvm qemu-kvm qemu qemu-system-x86_64 qemu-system-ppc64 qemu-system-aarch64);
             my %allowed = map { $_ => 1 } @execs;
             for (split(/\s*,\s*/, $class)) {
                 if ($allowed{$_}) {
@@ -683,7 +671,7 @@ sub start_qemu {
         # newer qemu needs safe cache capability level quirk settings
         # https://progress.opensuse.org/issues/75259
         my $caps = ',cap-cfpc=broken,cap-sbbc=broken,cap-ibs=broken';
-        $vars->{QEMUMACHINE} .= $caps if $self->{qemu_version} >= '4' && $vars->{QEMUMACHINE} !~ /$caps/;
+        $vars->{QEMUMACHINE} .= $caps if $vars->{QEMUMACHINE} !~ /$caps/;
     }
     sp('vga', $vars->{QEMUVGA}) if $vars->{QEMUVGA};
 

@@ -1,17 +1,5 @@
-# Copyright © 2018-2019 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2018-2019 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 package OpenQA::Isotovideo::CommandHandler;
 use Mojo::Base 'Mojo::EventEmitter';
@@ -271,7 +259,7 @@ sub _handle_command_set_current_test {
     my ($self, $response) = @_;
 
     # Note: It is unclear why we call set_serial_offset here
-    $bmwqemu::backend->_send_json({cmd => 'set_serial_offset'});
+    $bmwqemu::backend->_send_json({cmd => 'clear_serial_buffer'});
 
     my ($test_name, $full_test_name) = ($response->{name}, $response->{full_name});
     my $pause_test_name = $self->pause_test_name;

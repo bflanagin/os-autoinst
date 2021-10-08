@@ -1,25 +1,13 @@
-# Copyright © 2009-2013 Bernhard M. Wiedemann
-# Copyright © 2012-2021 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2009-2013 Bernhard M. Wiedemann
+# Copyright 2012-2021 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 package bmwqemu;
 
 use Mojo::Base -strict;
 use autodie ':all';
 use Fcntl ':flock';
-use Time::HiRes qw(sleep gettimeofday);
+use Time::HiRes qw(sleep);
 use IO::Socket;
 use POSIX;
 use Carp;
@@ -29,7 +17,7 @@ use File::Path 'remove_tree';
 use Data::Dumper;
 use Mojo::Log;
 use Mojo::File qw(path);
-use POSIX 'strftime';
+use Time::Moment;
 use Term::ANSIColor;
 
 use Exporter 'import';
@@ -191,9 +179,7 @@ sub log_format_callback {
     # ensure indentation for multi-line output
     $lines =~ s/(?<!\A)^/  /gm;
 
-    # Unfortunately $time doesn't have the precision we want. So we need to use Time::HiRes
-    $time = gettimeofday;
-    return sprintf(strftime("[%FT%T.%%03d %Z] [$level] ", localtime($time)), 1000 * ($time - int($time))) . $lines;
+    return '[' . Time::Moment->now . "] [$level] " . $lines;
 }
 
 sub diag {

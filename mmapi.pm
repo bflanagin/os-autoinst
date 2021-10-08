@@ -1,17 +1,5 @@
-# Copyright (c) 2015-2021 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2015-2021 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Multi-Machine API
 package mmapi;
@@ -22,7 +10,7 @@ use base 'Exporter';
 our @EXPORT = qw(get_children_by_state get_children get_parents
   get_job_info get_job_autoinst_url get_job_autoinst_vars
   wait_for_children wait_for_children_to_start api_call
-  api_call_2 handle_api_error
+  api_call_2 handle_api_error get_current_job_id
 );
 
 require bmwqemu;
@@ -30,8 +18,8 @@ require bmwqemu;
 use Mojo::UserAgent;
 use Mojo::URL;
 
-our $retry_count    = $ENV{OS_AUTOINST_MMAPI_RETRY_COUNT}    // 3;
-our $retry_interval = $ENV{OS_AUTOINST_MMAPI_RETRY_INTERVAL} // 3;
+our $retry_count    = $ENV{OS_AUTOINST_MMAPI_RETRY_COUNT}    // 30;
+our $retry_interval = $ENV{OS_AUTOINST_MMAPI_RETRY_INTERVAL} // 10;
 our $poll_interval  = $ENV{OS_AUTOINST_MMAPI_POLL_INTERVAL}  // 1;
 
 our $url;
@@ -287,6 +275,18 @@ sub wait_for_children_to_start {
         last unless $n;
         sleep $poll_interval;
     }
+}
+
+=head2 get_current_job_id
+
+    get_current_job_id();
+
+Query openQA's API to retrieve the current job ID 
+=cut
+sub get_current_job_id {
+    my $tx = api_call_2(get => 'whoami', undef, $CODES_EXPECTED_BY_MMAPI);
+    return undef if handle_api_error($tx, 'whoami', $CODES_EXPECTED_BY_MMAPI);
+    return $tx->res->json('/id');
 }
 
 1;

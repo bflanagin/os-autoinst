@@ -1,18 +1,6 @@
-# Copyright © 2009-2013 Bernhard M. Wiedemann
-# Copyright © 2012-2021 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2009-2013 Bernhard M. Wiedemann
+# Copyright 2012-2021 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 package consoles::sshVirtsh;
 
@@ -97,8 +85,9 @@ sub _init_xml ($self, $args = {}) {
     $elem->appendTextNode($self->name);
     $root->appendChild($elem);
 
+    my $openqa_hostname = get_var('OPENQA_HOSTNAME', 'no-webui-set');
     $elem = $doc->createElement('description');
-    $elem->appendTextNode("openQA Instance $instance: ");
+    $elem->appendTextNode("openQA WebUI: $openqa_hostname ($instance): ");
     $elem->appendTextNode(get_var('NAME', '0-no-scenario'));
     $root->appendChild($elem);
 
@@ -493,9 +482,9 @@ sub resume ($self) {
     bmwqemu::diag "VM " . $self->name . " resumed";
 }
 
-sub get_remote_vmm () { get_var('VMWARE_REMOTE_VMM', '') }
+sub get_remote_vmm ($self) { get_var('VMWARE_REMOTE_VMM', '') }
 
-sub define_and_start ($self, $args) {
+sub define_and_start ($self) {
     my $remote_vmm = "";
     if ($self->vmm_family eq 'vmware') {
         my ($fh, $libvirtauthfilename) = tempfile(DIR => "/tmp/");
@@ -550,21 +539,21 @@ __END"
     return;
 }
 
-sub attach_to_running ($self, $args) {
-    my $name = ref($args) ? $args->{name} : $args;
+sub attach_to_running ($self, $args = undef) {
+    $args = {name => $args} unless ref $args;
+
+    my $name = $args->{name};
     $self->name($name) if $name;
     $self->backend->start_serial_grab($self->name);
 
     # Setting SVIRT_KEEP_VM_RUNNING variable prevents destruction of a perhaps valuable VM
     # outside of openQA. Set 'stop_vm' argument should the VM be destroyed at the end.
-    unless ($args->{stop_vm}) {
-        set_var('SVIRT_KEEP_VM_RUNNING', 1);
-    }
+    set_var('SVIRT_KEEP_VM_RUNNING', 1) unless $args->{stop_vm};
 }
 
-sub start_serial_grab ($self, $args) { $self->backend->start_serial_grab($self->name) }
+sub start_serial_grab ($self) { $self->backend->start_serial_grab($self->name) }
 
-sub stop_serial_grab ($self, $args) { $self->backend->stop_serial_grab($self->name) }
+sub stop_serial_grab ($self) { $self->backend->stop_serial_grab($self->name) }
 
 
 =head2 run_cmd

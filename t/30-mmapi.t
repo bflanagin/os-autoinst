@@ -1,24 +1,13 @@
 #!/usr/bin/perl
 #
-# Copyright (c) 2020 SUSE LLC
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, see <http://www.gnu.org/licenses/>.
+# Copyright 2020 SUSE LLC
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # This test covers the signalblocker module and tinycv's helper to create
 # threads upfront.
 
 use Test::Most;
+use Mojo::Base -strict, -signatures;
 
 BEGIN {
     $ENV{OS_AUTOINST_LOCKAPI_RETRY_COUNT}    = 1;
@@ -52,9 +41,8 @@ $bmwqemu::vars{OPENQA_URL} = 'http://not/relevant';
 $bmwqemu::vars{JOBTOKEN}   = 'fake-jobtoken';
 
 # define helper to call a function by its name
-sub call {
-    my $function_name = shift;
-    __PACKAGE__->can($function_name)->(@_);
+sub call ($function_name, @args) {
+    __PACKAGE__->can($function_name)->(@args);
 }
 
 # test without a server
@@ -220,6 +208,17 @@ subtest 'mmapi: wait functions' => sub {
     my $mmapi_mock = Test::MockModule->new('mmapi');
     $mmapi_mock->redefine(get_children => undef);
     like exception { mmapi::wait_for_children }, qr/Failed to wait/, 'wait for children dies on error';
+};
+
+subtest 'mmapi: get_current_job_id function' => sub {
+    my $do_error = 0;
+    $fake_api->get('/whoami' => sub { return $do_error ? shift->render(status => 404, text => 'error') : shift->render(json => {id => 23}) });
+
+    is(get_current_job_id(), 23, 'Retrieve jobid');
+    $do_error = 1;
+    combined_like {
+        is(get_current_job_id(), undef, 'Retrieve undef on error');
+    } qr /404 response/, 'Error message has 404';
 };
 
 done_testing;

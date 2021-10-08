@@ -1,7 +1,7 @@
 #
 # spec file for package os-autoinst
 #
-# Copyright (c) 2018 SUSE LLC
+# Copyright 2018 SUSE LLC
 #
 # All modifications and additions to the file contributed by third parties
 # remain the property of their copyright owners, unless otherwise agreed
@@ -36,7 +36,7 @@ Source0:        %{name}-%{version}.tar.xz
 # The following line is generated from dependencies.yaml
 %define build_requires %build_base_requires cmake ninja
 # The following line is generated from dependencies.yaml
-%define main_requires git-core perl(B::Deparse) perl(Carp) perl(Carp::Always) perl(Class::Accessor::Fast) perl(Config) perl(Cpanel::JSON::XS) perl(Crypt::DES) perl(Cwd) perl(Data::Dumper) perl(Digest::MD5) perl(DynaLoader) perl(English) perl(Errno) perl(Exception::Class) perl(Exporter) perl(ExtUtils::testlib) perl(Fcntl) perl(File::Basename) perl(File::Find) perl(File::Path) perl(File::Temp) perl(File::Touch) perl(File::Which) perl(File::chdir) perl(IO::Handle) perl(IO::Scalar) perl(IO::Select) perl(IO::Socket) perl(IO::Socket::INET) perl(IO::Socket::UNIX) perl(IPC::Open3) perl(IPC::Run::Debug) perl(IPC::System::Simple) perl(List::MoreUtils) perl(List::Util) perl(Mojo::IOLoop::ReadWriteProcess) >= 0.26 perl(Mojo::JSON) perl(Mojo::Log) perl(Mojo::URL) perl(Mojo::UserAgent) perl(Mojolicious) >= 8.42 perl(Mojolicious::Lite) perl(Net::DBus) perl(Net::IP) perl(Net::SNMP) perl(Net::SSH2) perl(POSIX) perl(Scalar::Util) perl(Socket) perl(Socket::MsgHdr) perl(Term::ANSIColor) perl(Thread::Queue) perl(Time::HiRes) perl(Time::Seconds) perl(Try::Tiny) perl(XML::LibXML) perl(XML::SemanticDiff) perl(autodie) perl(base) perl(constant) perl(integer) perl(strict) perl(version) perl(warnings) perl-base
+%define main_requires git-core perl(B::Deparse) perl(Carp) perl(Carp::Always) perl(Class::Accessor::Fast) perl(Config) perl(Cpanel::JSON::XS) perl(Crypt::DES) perl(Cwd) perl(Data::Dumper) perl(Digest::MD5) perl(DynaLoader) perl(English) perl(Errno) perl(Exception::Class) perl(Exporter) perl(ExtUtils::testlib) perl(Fcntl) perl(File::Basename) perl(File::Find) perl(File::Path) perl(File::Temp) perl(File::Touch) perl(File::Which) perl(File::chdir) perl(IO::Handle) perl(IO::Scalar) perl(IO::Select) perl(IO::Socket) perl(IO::Socket::INET) perl(IO::Socket::UNIX) perl(IPC::Open3) perl(IPC::Run::Debug) perl(IPC::System::Simple) perl(List::MoreUtils) perl(List::Util) perl(Mojo::IOLoop::ReadWriteProcess) >= 0.26 perl(Mojo::JSON) perl(Mojo::Log) perl(Mojo::URL) perl(Mojo::UserAgent) perl(Mojolicious) >= 8.42 perl(Mojolicious::Lite) perl(Net::DBus) perl(Net::IP) perl(Net::SNMP) perl(Net::SSH2) perl(POSIX) perl(Scalar::Util) perl(Socket) perl(Socket::MsgHdr) perl(Term::ANSIColor) perl(Thread::Queue) perl(Time::HiRes) perl(Time::Moment) perl(Time::Seconds) perl(Try::Tiny) perl(XML::LibXML) perl(XML::SemanticDiff) perl(autodie) perl(base) perl(constant) perl(integer) perl(strict) perl(version) perl(warnings) perl-base
 # all requirements needed by the tests, do not require on this in the package
 # itself or any sub-packages
 # SLE is missing spell check requirements
@@ -74,19 +74,20 @@ Source0:        %{name}-%{version}.tar.xz
 %define python_style_requires %{nil}
 %endif
 # The following line is generated from dependencies.yaml
-%define test_base_requires %main_requires cpio perl(Benchmark) perl(Devel::Cover) perl(FindBin) perl(Pod::Coverage) perl(Test::Fatal) perl(Test::Mock::Time) perl(Test::MockModule) perl(Test::MockObject) perl(Test::MockRandom) perl(Test::Mojo) perl(Test::Most) perl(Test::Output) perl(Test::Pod) perl(Test::Strict) perl(Test::Warnings) >= 0.029 procps python3-setuptools qemu qemu-tools qemu-x86
+%define test_base_requires %main_requires cpio perl(Benchmark) perl(Devel::Cover) perl(FindBin) perl(Pod::Coverage) perl(Test::Fatal) perl(Test::Mock::Time) perl(Test::MockModule) perl(Test::MockObject) perl(Test::MockRandom) perl(Test::Mojo) perl(Test::Most) perl(Test::Output) perl(Test::Pod) perl(Test::Strict) perl(Test::Warnings) >= 0.029 procps python3-setuptools qemu >= 4.0 qemu-tools qemu-x86
 # The following line is generated from dependencies.yaml
 %define test_version_only_requires perl(Mojo::IOLoop::ReadWriteProcess) >= 0.28
 # The following line is generated from dependencies.yaml
 %define test_requires %build_requires %spellcheck_requires %test_base_requires %yamllint_requires perl(Inline::Python) perl(YAML::PP)
 # The following line is generated from dependencies.yaml
 %define devel_requires %python_style_requires %test_requires ShellCheck perl(Devel::Cover) perl(Devel::Cover::Report::Codecov) perl(Perl::Tidy)
+%define s390_zvm_requires /usr/bin/xkbcomp /usr/bin/Xvnc x3270 icewm xterm xterm-console xdotool fonts-config mkfontdir mkfontscale
 BuildRequires:  %test_requires %test_version_only_requires
 Requires:       %main_requires
 Recommends:     tesseract-ocr
-Recommends:     /usr/bin/xkbcomp /usr/bin/Xvnc dumponlyconsole
-Recommends:     qemu >= 2.0.0
-Recommends:     /usr/bin/qemu-img
+Recommends:     dumponlyconsole %s390_zvm_requires
+Recommends:     qemu >= 4.0.0
+Recommends:     qemu-tools 
 # Optional dependency for Python test API support
 Recommends:     perl(Inline::Python)
 Requires(pre):  %{_bindir}/getent
@@ -125,7 +126,7 @@ This package contains openvswitch support for os-autoinst.
 Summary:        Convenience package providing os-autoinst+qemu-kvm
 Group:          Development/Tools/Other
 Requires:       os-autoinst
-Requires:       qemu-kvm
+Requires:       qemu-kvm >= 4.0.0
 Requires:       qemu-tools
 
 %description qemu-kvm
@@ -134,12 +135,21 @@ Requires:       qemu-tools
 Summary:        Convenience package providing os-autoinst+qemu-x86
 Group:          Development/Tools/Other
 Requires:       os-autoinst
-Requires:       qemu-x86
+Requires:       qemu-x86 >= 4.0.0
 Requires:       qemu-tools
 
 %description qemu-x86
 Convenience package providing os-autoinst and qemu-x86 dependencies.
 %endif
+
+%package s390-deps
+Summary:        Convenience package providing os-autoinst + s390 worker jumphost deps
+Group:          Development/Tools/Other
+Requires:       os-autoinst
+Requires:       %s390_zvm_requires
+
+%description s390-deps
+Convenience package providing os-autoinst + s390 worker jumphost dependencies.
 
 
 %prep
@@ -237,5 +247,6 @@ cd %{__builddir}
 %files qemu-kvm
 %files qemu-x86
 %endif
+%files s390-deps
 
 %changelog
