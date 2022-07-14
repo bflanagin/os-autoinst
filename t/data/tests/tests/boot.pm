@@ -1,11 +1,10 @@
 # Copyright 2016-2021 SUSE LLC
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-use Mojo::Base -strict, -signatures;
-use base "basetest";
+use Mojo::Base 'basetest', -signatures;
 use testapi;
 
-sub run {
+sub run ($) {
     # just assume the first screen has a timeout so we should make sure not to miss it
     assert_screen 'core', 15, no_wait => 1;
     send_key 'ret';
@@ -15,8 +14,6 @@ sub run {
     assert_screen 'on_prompt', timeout => get_var('TESTING_ASSERT_SCREEN_TIMEOUT') ? 600 : 90;
 }
 
-sub test_flags {
-    return {};
-}
+sub test_flags ($) { {} }
 
 1;

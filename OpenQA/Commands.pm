@@ -2,16 +2,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 package OpenQA::Commands;
-use Mojo::Base 'Mojolicious::Controller';
+use Mojo::Base 'Mojolicious::Controller', -signatures;
 
 use commands;
 use Try::Tiny;
 use Mojo::JSON qw(decode_json to_json);
 
-sub pass_message_from_ws_client_to_isotovideo {
-    my ($self, $id, $msg) = @_;
-
-    my $app        = $self->app;
+sub pass_message_from_ws_client_to_isotovideo ($self, $id, $msg) {
+    my $app = $self->app;
     my $isotovideo = $app->defaults('isotovideo');
     return $app->log->debug('cmdsrv: not passing command from client to isotovideo; connection to isotovideo has already been stopped')
       unless defined $isotovideo;
@@ -33,22 +31,18 @@ sub pass_message_from_ws_client_to_isotovideo {
     # note: no myjsonrpc::read_json() here - response is broadcasted to all clients in commands.pm
 }
 
-sub handle_ws_client_disconnects {
-    my ($self, $id) = @_;
+sub handle_ws_client_disconnects ($self, $id) {
     $self->app->log->debug('cmdsrv: client disconnected: ' . $id);
     delete $self->app->defaults('clients')->{$id};
 }
 
-sub start_ws {
-    my ($self) = @_;
-
+sub start_ws ($self) {
     my $id = sprintf "%s", $self->tx;
     $self->app->log->debug('cmdsrv: client connected: ' . $id);
     $self->app->defaults('clients')->{$id} = $self->tx;
 
     $self->on(
-        message => sub {
-            my ($self, $msg) = @_;
+        message => sub ($self, $msg) {
             $self->pass_message_from_ws_client_to_isotovideo($id, $msg);
         });
     $self->on(finish => sub {
@@ -56,17 +50,15 @@ sub start_ws {
     });
 }
 
-sub broadcast_message_to_websocket_clients {
-    my ($self) = @_;
-
-    my $app     = $self->app;
+sub broadcast_message_to_websocket_clients ($self) {
+    my $app = $self->app;
     my $clients = $app->defaults('clients');
     my $message = $self->req->json;
 
     $app->log->debug('cmdsrv: broadcasting message from API call to all ws clients');
     return $self->render(
         json => {
-            error  => 'JSON message to be boradcasted missing or invalid',
+            error => 'JSON message to be boradcasted missing or invalid',
             status => 'boradcast failed',
         },
         status => 400,

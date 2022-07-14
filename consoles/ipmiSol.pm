@@ -3,19 +3,14 @@
 
 package consoles::ipmiSol;
 
-use Mojo::Base -strict;
+use Mojo::Base 'consoles::console', -signatures;
 use autodie ':all';
-
-use base 'consoles::console';
-
 require IPC::System::Simple;
 use POSIX '_exit';
 use bmwqemu;
 use IO::Pipe;
 
-sub activate {
-    my ($self) = @_;
-
+sub activate ($self) {
     $self->{serial_pipe} = IO::Pipe->new();
 
     setpgrp 0, 0;
@@ -82,8 +77,7 @@ sub activate {
     _exit(0);
 }
 
-sub disable {
-    my ($self) = @_;
+sub disable ($self) {
     return unless $self->{serialpid};
     $self->{serial_pipe}->print("GO!\n");
     $self->{serial_pipe}->close;
@@ -93,7 +87,6 @@ sub disable {
     return $ret;
 }
 
-# we have no screen
-sub screen { }
+sub screen ($self) { }
 
 1;

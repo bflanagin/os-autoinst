@@ -3,21 +3,15 @@
 
 package consoles::sshVirtshSUT;
 
-use Mojo::Base -strict;
-
-use base 'consoles::console';
-
-use testapi 'get_var';
+use Mojo::Base 'consoles::console', -signatures;
 use backend::svirt qw(SERIAL_TERMINAL_DEFAULT_PORT SERIAL_TERMINAL_DEFAULT_DEVICE);
 use consoles::ssh_screen;
 
-sub new {
-    my ($class, $testapi_console, $args) = @_;
-
+sub new ($class, $testapi_console, $args) {
     my $self = $class->SUPER::new($testapi_console, $args);
 
     # TODO: inherit from consoles::sshVirtsh
-    my $instance = get_var('VIRSH_INSTANCE', 1);
+    my $instance = $bmwqemu::vars{VIRSH_INSTANCE} // 1;
     $self->{libvirt_domain} = $args->{libvirt_domain} // "openQA-SUT-$instance";
     $self->{serial_port_no} = $args->{serial_port_no} // SERIAL_TERMINAL_DEFAULT_PORT;
 
@@ -32,30 +26,26 @@ sub new {
     return $self;
 }
 
-sub screen { shift->{screen} }
+sub screen ($self) { $self->{screen} }
 
-sub disable {
-    my ($self) = @_;
-
+sub disable ($self) {
     return unless $self->{ssh};
     $self->{ssh}->disconnect;
     $self->{ssh} = $self->{chan} = $self->{screen} = undef;
     return;
 }
 
-sub activate {
-    my ($self) = @_;
-
+sub activate ($self) {
     my $backend = $self->{backend};
     bmwqemu::diag(sprintf("Activate console on libvirt_domain:%s devname:%s port:%s",
             $self->{libvirt_domain}, $self->{pty_dev}, $self->{serial_port_no}));
     my ($ssh, $chan) = $backend->open_serial_console_via_ssh(
         $self->{libvirt_domain}, devname => $self->{pty_dev}, port => $self->{serial_port_no}, blocking => 0);
     $self->{screen} = consoles::ssh_screen->new(ssh_connection => $ssh, ssh_channel => $chan);
-    $self->{ssh}    = $ssh;
+    $self->{ssh} = $ssh;
     return;
 }
 
-sub is_serial_terminal { 1 }
+sub is_serial_terminal ($self) { 1 }
 
 1;

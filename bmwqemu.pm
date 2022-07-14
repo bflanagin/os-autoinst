@@ -4,12 +4,11 @@
 
 package bmwqemu;
 
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 use autodie ':all';
 use Fcntl ':flock';
 use Time::HiRes qw(sleep);
 use IO::Socket;
-use POSIX;
 use Carp;
 use Mojo::JSON qw(encode_json);
 use Cpanel::JSON::XS ();
@@ -17,23 +16,22 @@ use File::Path 'remove_tree';
 use Data::Dumper;
 use Mojo::Log;
 use Mojo::File qw(path);
-use Time::Moment;
 use Term::ANSIColor;
 
 use Exporter 'import';
 
 our $VERSION;
-our @EXPORT_OK = qw(diag fctres fctinfo fctwarn modstart save_vars);
+our @EXPORT_OK = qw(diag fctres fctinfo fctwarn modstate save_vars);
 
-use backend::driver;
 require IPC::System::Simple;
+use log;
 
 sub mydie;
 
 $| = 1;
 
 
-our $default_timeout      = 30;                        # assert timeout, 0 is a valid timeout
+our $default_timeout = 30;    # assert timeout, 0 is a valid timeout
 our $openqa_default_share = '/var/lib/openqa/share';
 
 my @ocrrect;
@@ -42,39 +40,45 @@ our $screenshotpath = "qemuscreenshot";
 
 # global vars
 
-our $logger;
-
-our $direct_output;
-
 # Known locations of OVMF (UEFI) firmware: first is openSUSE, second is
 # the kraxel.org nightly packages, third is Fedora's edk2-ovmf package,
 # fourth is Debian's ovmf package.
 our @ovmf_locations = (
     '/usr/share/qemu/ovmf-x86_64-ms-code.bin', '/usr/share/edk2.git/ovmf-x64/OVMF_CODE-pure-efi.fd',
-    '/usr/share/edk2/ovmf/OVMF_CODE.fd',       '/usr/share/OVMF/OVMF_CODE.fd'
+    '/usr/share/edk2/ovmf/OVMF_CODE.fd', '/usr/share/OVMF/OVMF_CODE.fd'
 );
 
 our %vars;
+tie %vars, 'bmwqemu::tiedvars', %vars;
 
-sub result_dir { 'testresults' }
+sub result_dir () { 'testresults' }
 
-sub logger { $logger //= Mojo::Log->new(level => 'debug', format => \&log_format_callback) }
-
-sub init_logger { logger->path(path(result_dir, 'autoinst-log.txt')) unless $direct_output }
+# deprecated functions, moved to log module
+{
+    no warnings 'once';
+    *log_format_callback = \&log::log_format_callback;
+    *diag = \&log::diag;
+    *fctres = \&log::fctres;
+    *fctinfo = \&log::fctinfo;
+    *fctwarn = \&log::fctwarn;
+    *modstate = \&log::modstate;
+    *logger = \&log::logger;
+    *init_logger = \&log::init_logger;
+}
 
 use constant STATE_FILE => 'base_state.json';
 
 # Write a JSON representation of the process termination to disk
-sub serialize_state {
-    my $state = {@_};
-    bmwqemu::diag($state->{msg}) if delete $state->{log};
-    return undef                 if -e STATE_FILE;
-    eval { Mojo::File->new(STATE_FILE)->spurt(encode_json($state)); };
+sub serialize_state (%state) {
+    bmwqemu::fctwarn($state{msg}) if delete $state{error};
+    bmwqemu::diag($state{msg}) if delete $state{log};
+    return undef if -e STATE_FILE;
+    eval { path(STATE_FILE)->spurt(encode_json(\%state)) };
     bmwqemu::diag("Unable to serialize fatal error: $@") if $@;
 }
 
-sub load_vars {
-    my $fn  = "vars.json";
+sub load_vars () {
+    my $fn = "vars.json";
     my $ret = {};
     local $/;
     my $fh;
@@ -87,18 +91,17 @@ sub load_vars {
     return;
 }
 
-sub save_vars {
-    my (%args) = @_;
+sub save_vars (%args) {
     my $fn = "vars.json";
     unlink "vars.json" if -e "vars.json";
     open(my $fd, ">", $fn);
     flock($fd, LOCK_EX) or die "cannot lock vars.json: $!\n";
-    truncate($fd, 0)    or die "cannot truncate vars.json: $!\n";
+    truncate($fd, 0) or die "cannot truncate vars.json: $!\n";
 
     my $write_vars = \%vars;
     if ($args{no_secret}) {
         $write_vars = {};
-        $write_vars->{$_} = $vars{$_} for (grep !/^_SECRET_/, keys(%vars));
+        $write_vars->{$_} = $vars{$_} for (grep !/(^_SECRET_|_PASSWORD)/, keys(%vars));
     }
 
     # make sure the JSON is sorted
@@ -113,7 +116,7 @@ our $gocrbin = "/usr/bin/gocr";
 # set from isotovideo during initialization
 our $scriptdir;
 
-sub init {
+sub init () {
     load_vars();
 
     $vars{BACKEND} ||= "qemu";
@@ -126,10 +129,10 @@ sub init {
     mkdir result_dir;
     mkdir join('/', result_dir, 'ulogs');
 
-    init_logger;
+    log::init_logger;
 }
 
-sub _check_publish_vars {
+sub _check_publish_vars () {
     return 0 unless my $nd = $vars{NUMDISKS};
     my @hdds = map { $vars{"HDD_$_"} } 1 .. $nd;
     for my $i (1 .. $nd) {
@@ -142,10 +145,10 @@ sub _check_publish_vars {
     return 1;
 }
 
-sub ensure_valid_vars {
+sub ensure_valid_vars () {
     # defaults
     $vars{QEMUPORT} ||= 15222;
-    $vars{VNC}      ||= 90;
+    $vars{VNC} ||= 90;
     # openQA already sets a random string we can reuse
     $vars{JOBTOKEN} ||= random_string(10);
 
@@ -154,7 +157,7 @@ sub ensure_valid_vars {
     }
 
     die "CASEDIR variable not set, unknown test case directory" if !defined $vars{CASEDIR};
-    die "No scripts in $vars{CASEDIR}"                          if !-e "$vars{CASEDIR}";
+    die "No scripts in CASEDIR '$vars{CASEDIR}'\n" unless -e $vars{CASEDIR};
     _check_publish_vars();
     save_vars();
 }
@@ -171,64 +174,13 @@ our $backend;
 
 # util and helper functions
 
-sub log_format_callback {
-    my ($time, $level, @items) = @_;
-
-    my $lines = join("\n", @items, '');
-
-    # ensure indentation for multi-line output
-    $lines =~ s/(?<!\A)^/  /gm;
-
-    return '[' . Time::Moment->now . "] [$level] " . $lines;
-}
-
-sub diag {
-    my ($args) = @_;
-    confess "missing input" unless $_[0];
-    logger->append(color('white'));
-    logger->debug(@_)->append(color('reset'));
-    return;
-}
-
-sub fctres {
-    my ($text, $fname) = @_;
-
-    $fname //= (caller(1))[3];
-    logger->append(color('green'));
-    logger->debug(">>> $fname: $text")->append(color('reset'));
-    return;
-}
-
-sub fctinfo {
-    my ($text, $fname) = @_;
-
-    $fname //= (caller(1))[3];
-    logger->append(color('yellow'));
-    logger->info("::: $fname: $text")->append(color('reset'));
-    return;
-}
-
-sub fctwarn {
-    my ($text, $fname) = @_;
-
-    $fname //= (caller(1))[3];
-    logger->append(color('red'));
-    logger->warn("!!! $fname: $text")->append(color('reset'));
-    return;
-}
-
-sub modstart {
-    logger->append(color('bold blue'));
-    logger->debug("||| @{[join(' ', @_)]}")->append(color('reset'));
-    return;
-}
-
-sub current_test {
+sub current_test () {
     require autotest;
+    no warnings 'once';
     return $autotest::current_test;
 }
 
-sub update_line_number {
+sub update_line_number () {
     return unless current_test;
     return unless current_test->{script};
     my @out;
@@ -239,29 +191,46 @@ sub update_line_number {
         $filename =~ s@$casedir/?@@;
         push @out, "$filename:$line called $subroutine";
     }
-    $logger->debug(join(' -> ', @out));
+    log::logger->debug(join(' -> ', @out));
     return;
 }
 
 # pretty print like Data::Dumper but without the "VAR1 = " prefix
-sub pp {
+sub pp (@args) {
     # FTR, I actually hate Data::Dumper.
-    my $value_with_trailing_newline = Data::Dumper->new(\@_)->Terse(1)->Useqq(1)->Dump();
+    my $value_with_trailing_newline = Data::Dumper->new(\@args)->Terse(1)->Useqq(1)->Dump();
     chomp($value_with_trailing_newline);
     return $value_with_trailing_newline;
 }
 
-sub log_call {
+# Use special argument `-masked` to hide the given value in log output.
+# It can be specified multiple times and or the value can be a ARRAY_REF or
+# scalar.
+sub log_call (@args) {
     my $fname = (caller(1))[3];
     update_line_number();
+
+    # extract -masked parameter out of argument list
+    my @masked;
+    my @effective_args;
+    while (@args) {
+        my $v = shift @args;
+        if (defined($v) && $v eq '-masked' && @args) {
+            my $mval = shift @args;
+            push @masked, ref($mval) eq 'ARRAY' ? @$mval : $mval;
+        } else {
+            push @effective_args, $v;
+        }
+    }
+
     my $params;
-    if (@_ == 1) {
-        $params = pp($_[0]);
+    if (@effective_args == 1) {
+        $params = pp($effective_args[0]);
     }
     else {
         # key/value pairs
         my @result;
-        while (my ($key, $value) = splice(@_, 0, 2)) {
+        while (my ($key, $value) = splice(@effective_args, 0, 2)) {
             if ($key =~ tr/0-9a-zA-Z_//c) {
                 # only quote if needed
                 $key = pp($key);
@@ -270,7 +239,14 @@ sub log_call {
         }
         $params = join(", ", @result);
     }
-    logger->debug('<<< ' . $fname . "($params)");
+
+    foreach (@masked) {
+        my $mask = pp($_);
+        $mask =~ s/^"(.*)"$/$1/;
+        $params =~ s/\Q$mask\E/[masked]/g;
+    }
+
+    log::logger->debug('<<< ' . $fname . "($params)");
     return;
 }
 
@@ -278,14 +254,13 @@ sub log_call {
 
 # backend management
 
-sub stop_vm {
+sub stop_vm () {
     return unless $backend;
     my $ret = $backend->stop();
     return $ret;
 }
 
-sub mydie {
-    my ($cause_of_death) = @_;
+sub mydie ($cause_of_death) {
     log_call(cause_of_death => $cause_of_death);
     croak "mydie";
 }
@@ -294,8 +269,7 @@ sub mydie {
 
 
 # store the obj as json into the given filename
-sub save_json_file {
-    my ($result, $fn) = @_;
+sub save_json_file ($result, $fn) {
     open(my $fd, ">", "$fn.new");
     my $json = Cpanel::JSON::XS->new->pretty->canonical->encode($result);
     print $fd $json;
@@ -303,8 +277,7 @@ sub save_json_file {
     return rename("$fn.new", $fn);
 }
 
-sub scale_timeout {
-    my ($timeout) = @_;
+sub scale_timeout ($timeout) {
     return $timeout * ($vars{TIMEOUT_SCALE} // 1);
 }
 
@@ -314,8 +287,7 @@ sub scale_timeout {
 
 Just a random string useful for pseudo security or temporary files.
 =cut
-sub random_string {
-    my ($count) = @_;
+sub random_string ($count) {
     $count //= 4;
     my $string;
     my @chars = ('a' .. 'z', 'A' .. 'Z');
@@ -323,11 +295,46 @@ sub random_string {
     return $string;
 }
 
-sub wait_for_one_more_screenshot {
-    # sleeping for one second should ensure that one more screenshot is taken
-    # uncoverable subroutine
-    # uncoverable statement
-    sleep 1;
+# sleeping for one second should ensure that one more screenshot is taken
+sub wait_for_one_more_screenshot () { sleep 1 }
+
+package bmwqemu::tiedvars;
+use Tie::Hash;
+use base qw/ Tie::StdHash /;    # no:style prevent style warning regarding use of Mojo::Base and base in this file
+use Carp ();
+
+sub TIEHASH ($class, %args) {
+    my $self = bless {
+        data => {%args},
+    }, $class;
 }
+
+sub STORE ($self, $key, $val) {
+    warn Carp::longmess "Settings key '$key' is invalid" unless $key =~ m/^(?:[A-Z0-9_]+)\z/;
+    $self->{data}->{$key} = $val;
+}
+
+sub FIRSTKEY ($self) {
+    my $data = $self->{data};
+    my @k = keys %$data;    # reset
+    my $next = each %$data;
+}
+
+sub NEXTKEY ($self, $last) {
+    my $data = $self->{data};
+    my $next = each %$data;
+}
+
+sub FETCH ($self, $key) {
+    my $val = $self->{data}->{$key};
+}
+
+sub DELETE ($self, $key) { delete $self->{data}->{$key} }
+
+sub EXISTS ($self, $key) { exists $self->{data}->{$key} }
+
+sub CLEAR ($self) { $self->{data} = {} }
+
+sub SCALAR ($self) { scalar %{$self->{data}} }
 
 1;

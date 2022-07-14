@@ -1,10 +1,7 @@
-use Mojo::Base -strict, -signatures;
-use base 'basetest';
+use Mojo::Base 'basetest', -signatures;
 
-sub run { }
+sub run ($) { }
 
-sub test_flags {
-    return {fatal => 1};
-}
+sub test_flags ($) { {fatal => 1} }
 
 1;

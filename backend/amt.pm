@@ -3,16 +3,12 @@
 
 package backend::amt;
 
-use Mojo::Base -strict;
+use Mojo::Base 'backend::baseclass', -signatures;
 use autodie ':all';
-
-use base 'backend::baseclass';
-
 use Time::HiRes qw(sleep gettimeofday);
 use Data::Dumper;
 require Carp;
 use bmwqemu ();
-use testapi 'get_required_var';
 use IPC::Run ();
 require IPC::System::Simple;
 
@@ -27,27 +23,23 @@ my $ADR = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
 # letter, digit, and special
 my $vnc_password = 'we4kP@ss';
 
-sub new {
-    my $class = shift;
-    get_required_var('AMT_HOSTNAME');
-    get_required_var('AMT_PASSWORD');
+sub new ($class) {
+    defined $bmwqemu::vars{AMT_HOSTNAME} or die 'Need variable AMT_HOSTNAME';
+    defined $bmwqemu::vars{AMT_PASSWORD} or die 'Need variable AMT_PASSWORD';
 
     # use env to avoid leaking password to logs
     $ENV{'WSMAN_USER'} = 'admin';
     $ENV{'WSMAN_PASS'} = $bmwqemu::vars{AMT_PASSWORD};
 
+    backend::baseclass::handle_deprecate_backend('AMT');
     return $class->SUPER::new;
 }
 
-sub wsman_cmdline {
-    my ($self) = @_;
-
+sub wsman_cmdline ($self) {
     return ('wsman', '-h', $bmwqemu::vars{AMT_HOSTNAME}, '-P', '16992');
 }
 
-sub wsman {
-    my ($self, $cmd, $stdin) = @_;
-
+sub wsman ($self, $cmd, $stdin = undef) {
     my @cmd = $self->wsman_cmdline();
     push(@cmd, split(/ /, $cmd));
 
@@ -63,15 +55,11 @@ sub wsman {
 }
 
 # enable SOL + IDE-r
-sub enable_solider {
-    my ($self) = @_;
-
+sub enable_solider ($self) {
     $self->wsman("invoke -a RequestStateChange $AMT/AMT_RedirectionService -k RequestedState=32771");
 }
 
-sub configure_vnc {
-    my ($self) = @_;
-
+sub configure_vnc ($self) {
     # is turning it off first necessary?
     #$self->wsman("invoke -a RequestStateChange $CIM/CIM_KVMRedirectionSAP -k RequestedState=3");
     $self->wsman("put $IPS/IPS_KVMRedirectionSettingData -k RFBPassword=$vnc_password");
@@ -81,17 +69,13 @@ sub configure_vnc {
     $self->wsman("invoke -a RequestStateChange $CIM/CIM_KVMRedirectionSAP -k RequestedState=2");
 }
 
-sub get_power_state {
-    my ($self) = @_;
-
+sub get_power_state ($self) {
     my $stdout = $self->wsman("get $CIM/CIM_AssociatedPowerManagementService");
 
     return ($stdout =~ m/:PowerState>(\d+)</)[0];
 }
 
-sub set_power_state {
-    my ($self, $power_state) = @_;
-
+sub set_power_state ($self, $power_state) {
     my $cmd_stdin = "
 <p:RequestPowerStateChange_INPUT xmlns:p=\"$CIM/CIM_PowerManagementService\">
   <p:PowerState>$power_state</p:PowerState>
@@ -111,22 +95,12 @@ sub set_power_state {
     return ($stdout =~ m/:ReturnValue>(\d+)</);
 }
 
-sub select_next_boot {
-    my ($self, $bootdev) = @_;
-
-    my $amt_bootdev;
-    if ($bootdev eq 'cddvd') {
-        $amt_bootdev = 'Intel(r) AMT: Force CD/DVD Boot';
-    }
-    elsif ($bootdev eq 'hdd') {
-        $amt_bootdev = 'Intel(r) AMT: Force Hard-drive Boot';
-    }
-    elsif ($bootdev eq 'pxe') {
-        $amt_bootdev = 'Intel(r) AMT: Force PXE Boot';
-    }
-    else {
-        die "Unsupported boot device $bootdev";
-    }
+sub select_next_boot ($self, $bootdev) {
+    my $amt_bootdev = 'Intel(r) AMT: Force ' . ({
+            cddvd => 'CD/DVD Boot',
+            hdd => 'Hard-drive Boot',
+            pxe => 'PXE Boot',
+    }->{$bootdev} or die "Unsupported boot device $bootdev");
 
     # reset boot configuration to known state
     my $keys = "-k BIOSPause=false -k BootMediaIndex=0";
@@ -177,31 +151,15 @@ sub select_next_boot {
 </p:SetBootConfigRole_INPUT>";
 
     $stdout = $self->wsman("-J - invoke -a SetBootConfigRole $CIM/CIM_BootService", $cmd_stdin);
-
-    if (!($stdout =~ m/:ReturnValue>0</)) {
-        die "SetBootConfigRole failed";
-    }
-
+    die 'SetBootConfigRole failed' unless $stdout =~ m/:ReturnValue>0</;
 }
 
-sub restart_host {
-    my ($self) = @_;
+sub restart_host ($self) {
     $self->set_power_state($self->is_shutdown() ? 2 : 5);
 }
 
-sub do_start_vm {
-    my ($self) = @_;
-
-
-    #if (!$self->{configured}) {
-    #   $self->enable_solider();
-    #   $self->configure_vnc();
-    #   $self->{configured} = 1;
-    #}
+sub do_start_vm ($self, @) {
     $self->select_next_boot('pxe');
-
-    # remove backend.crashed
-    $self->unlink_crash_file;
     $self->restart_host;
     sleep(5);
     $self->truncate_serial_file;
@@ -212,10 +170,10 @@ sub do_start_vm {
         'sut',
         'vnc-base',
         {
-            hostname        => $bmwqemu::vars{AMT_HOSTNAME},
-            password        => $vnc_password,
+            hostname => $bmwqemu::vars{AMT_HOSTNAME},
+            password => $vnc_password,
             connect_timeout => 3,
-            port            => 5900
+            port => 5900
         });
 
     $vnc->backend($self);
@@ -226,9 +184,7 @@ sub do_start_vm {
     return {};
 }
 
-sub do_stop_vm {
-    my ($self) = @_;
-
+sub do_stop_vm ($self, @) {
     # need to terminate both VNC and console first, otherwise AMT will refuse
     # to shutdown
     $self->deactivate_console({testapi_console => 'sol'});
@@ -237,8 +193,7 @@ sub do_stop_vm {
     return {};
 }
 
-sub is_shutdown {
-    my ($self) = @_;
+sub is_shutdown ($self, @) {
     my $ret = $self->get_power_state();
     return $ret == 8;
 }

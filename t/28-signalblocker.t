@@ -19,10 +19,7 @@ use POSIX ':signal_h';
 use signalblocker;
 
 no warnings 'redefine';
-sub bmwqemu::diag { note $_[0] }
-
-# make the number of threads to spawn configurable
-my $fix_thread_count_for_testing = $ENV{OS_AUTOINST_TEST_THREAD_COUNT} // 8;
+sub bmwqemu::diag ($text) { note $text }
 
 # make the usage of the signal blocker configurable
 # note: The test will fail if this variable is set. This configuration is used to verify that the
@@ -30,7 +27,7 @@ my $fix_thread_count_for_testing = $ENV{OS_AUTOINST_TEST_THREAD_COUNT} // 8;
 my $no_signal_blocker = $ENV{OS_AUTOINST_TEST_NO_SIGNAL_BLOCKER};
 
 # define a helper to find the number of threads spawned by this test
-sub thread_count { scalar split("\n", `ps huH p $$`) }
+sub thread_count () { scalar split("\n", `ps huH p $$`) }
 is(my $last_thread_count = thread_count, 1, 'initially one thread');
 
 # count SIGTERMs we receive; those handlers should work after creating/destroying the signal blocker
@@ -47,9 +44,15 @@ $SIG{CHLD} = sub { $received_sigchld += 1; note "received SIGCHLD $received_sigc
     require cv;
     cv::init();
     require tinycv;
-    tinycv::create_threads($fix_thread_count_for_testing);
+
+    # make the number of threads to spawn configurable
+    my $thread_count = tinycv::default_thread_count();
+    my $thread_count_for_testing = $ENV{OS_AUTOINST_TEST_THREAD_COUNT} || $thread_count;
+    note "threads used: $thread_count_for_testing of $thread_count";
+
+    tinycv::create_threads($thread_count_for_testing);
     $last_thread_count = thread_count;
-    cmp_ok($last_thread_count, '>=', $fix_thread_count_for_testing, "at least $fix_thread_count_for_testing threads created");
+    cmp_ok($last_thread_count, '>=', $thread_count_for_testing, "at least $thread_count_for_testing threads created");
 }
 
 # do some native calls; no further threads should be created
@@ -61,7 +64,7 @@ cmp_ok(thread_count, '<=', $last_thread_count, 'no new threads after searching f
 # send a lot of SIGTERMs to ourselves; expect no crashes
 # notes: Not simply using Perl's kill function here because using that I've never been able to actually observe
 #        any crashes without the signal blocker in place (OS_AUTOINST_TEST_NO_SIGNAL_BLOCKER=1).
-my $pid     = $$;
+my $pid = $$;
 my $timeout = 5;
 exec bash => '-e', '-c', "for i in {1..100}; do echo \"# sending SIGTERM \$i\" && kill $pid; done" unless my $fork = fork;
 waitpid $fork, 0;

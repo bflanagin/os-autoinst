@@ -4,7 +4,7 @@ use Test::Most;
 use Mojo::Base -strict, -signatures;
 use FindBin '$Bin';
 use lib "$Bin/../external/os-autoinst-common/lib";
-use OpenQA::Test::TimeLimit '20';
+use OpenQA::Test::TimeLimit '10';
 use Test::MockObject;
 use Test::MockModule;
 use Test::Warnings ':report_warnings';
@@ -20,7 +20,7 @@ my $eagain = [
 ];
 
 my $mock_backend = Test::MockObject->new();
-my $mock_ssh     = Test::MockObject->new();
+my $mock_ssh = Test::MockObject->new();
 my $mock_channel = Test::MockObject->new();
 my $mock_bmwqemu = Test::MockModule->new('bmwqemu');
 
@@ -28,17 +28,19 @@ $mock_ssh->{error} = undef;
 
 $mock_channel->{write_limits} = [];
 $mock_channel->{write_buffer} = '';
-$mock_channel->{read_queue}   = [];
-$mock_channel->{blocking}     = 1;
+$mock_channel->{read_queue} = [];
+$mock_channel->{blocking} = 1;
 
-$mock_channel->mock(pty      => sub { 1 });
-$mock_channel->mock(ext_data => sub { 1 });
-$mock_channel->mock(shell    => sub { 1 });
-$mock_channel->mock(send_eof => sub { 1 });
+$mock_channel->set_always(pty => 1);
+$mock_channel->set_always(ext_data => 1);
+$mock_channel->set_always(shell => 1);
+$mock_channel->set_always(send_eof => 1);
 
-$mock_ssh->mock(channel => sub { $mock_channel });
+$mock_ssh->set_always(channel => $mock_channel);
+$mock_ssh->set_always(hostname => 1);
+$mock_ssh->set_always(disconnect => 1);
 
-$mock_backend->mock(new_ssh_connection => sub { $mock_ssh });
+$mock_backend->set_always(new_ssh_connection => $mock_ssh);
 
 $mock_bmwqemu->noop('diag', 'fctinfo', 'log_call');
 
@@ -47,7 +49,9 @@ $mock_channel->mock(blocking => sub ($self, $arg = undef) {
         return $self->{blocking};
 });
 
-$mock_channel->mock(read => sub ($self, $, $size) {
+$mock_channel->mock(read => sub {    # no:style:signatures
+        my ($self, undef, $size) = @_;
+
         my $data = shift @{$self->{read_queue}};
 
         if (!defined($data)) {
@@ -60,6 +64,9 @@ $mock_channel->mock(read => sub ($self, $, $size) {
             $data = substr($data, 0, $size);
         }
 
+        # this is why we can't use a signature for this function,
+        # assigning to @_ in a function with signature triggers a
+        # warning
         $_[1] = $data;
         return length($data);
 });
@@ -77,7 +84,7 @@ $mock_channel->mock(write => sub ($self, $data) {
         return length($data);
 });
 
-$mock_ssh->mock(blocking => sub { return $mock_channel->blocking($_[1]) });
+$mock_ssh->set_always(blocking => $mock_channel->blocking($_[1]));
 
 $mock_ssh->mock(error => sub ($self) {
         return undef unless defined($self->{error});
@@ -88,10 +95,10 @@ $mock_ssh->mock(error => sub ($self) {
 $mock_ssh->mock(die_with_error => sub { die $_[1] });
 
 subtest 'Read test' => sub {
-    $mock_ssh->{error}            = undef;
+    $mock_ssh->{error} = undef;
     $mock_channel->{write_limits} = [];
     $mock_channel->{write_buffer} = '';
-    $mock_channel->{read_queue}   = [
+    $mock_channel->{read_queue} = [
         'First line',
         'Second line',
         undef,
@@ -155,14 +162,17 @@ subtest 'Read test' => sub {
     ok !$$ret{matched}, 'read until reports failure if search term not found';
     is $$ret{string}, ' more than usual.', 'rest of data has been read';
     is_deeply $mock_channel->{read_queue}, [], 'nothing left in read queue';
+
+    is $console->disable, undef, 'can call disable';
+    is $console->is_serial_terminal, 1, 'sshSerial is a serial terminal';
 };
 
 subtest 'Write test' => sub {
-    $mock_ssh->{error}            = undef;
+    $mock_ssh->{error} = undef;
     $mock_channel->{write_limits} = [];
     $mock_channel->{write_buffer} = '';
-    $mock_channel->{read_queue}   = [];
-    $mock_channel->{blocking}     = 1;
+    $mock_channel->{read_queue} = [];
+    $mock_channel->{blocking} = 1;
 
     my $console = consoles::sshSerial->new(undef, {hostname => 'localhost'});
     $console->backend($mock_backend);
@@ -182,3 +192,7 @@ subtest 'Write test' => sub {
 };
 
 done_testing;
+
+END {
+    unlink 'serial_terminal.txt';
+}

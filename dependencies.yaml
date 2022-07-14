@@ -42,9 +42,11 @@ cover_requires:
 devel_requires:
   '%test_requires':
   '%python_style_requires':
+  perl(Code::TidyAll):
   perl(Devel::Cover):
   perl(Devel::Cover::Report::Codecov):
-  perl(Perl::Tidy): '== 20210717'
+  perl(Template::Toolkit):
+  perl(Perl::Tidy): '== 20220613'
   ShellCheck:
 
 docker_requires:
@@ -89,6 +91,10 @@ test_base_requires:
   qemu-x86:
   procps:
   python3-setuptools:
+  xterm-console:
+  xorg-x11-Xvnc:
+  icewm:
+  xterm:
 
 test_version_only_requires:
   perl(Mojo::IOLoop::ReadWriteProcess): '>= 0.28'
@@ -103,6 +109,7 @@ test_requires:
   '%yamllint_requires':
   perl(YAML::PP):
   perl(Inline::Python):
+  python3-Pillow-tk:
 
 main_requires:
   git-core:
@@ -110,7 +117,6 @@ main_requires:
   perl(B::Deparse):
   perl(Carp):
   perl(Carp::Always):
-  perl(Class::Accessor::Fast):
   perl(Config):
   perl(Cpanel::JSON::XS):
   perl(Crypt::DES):

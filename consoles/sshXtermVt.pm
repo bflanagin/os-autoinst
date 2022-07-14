@@ -4,33 +4,27 @@
 
 package consoles::sshXtermVt;
 
-use Mojo::Base -strict;
+use Mojo::Base 'consoles::localXvnc', -signatures;
 use autodie ':all';
-
-use base 'consoles::localXvnc';
-
 use IO::Socket::INET;
-use testapi 'get_var';
 require IPC::System::Simple;
 
-sub activate {
-    my ($self) = @_;
-
+sub activate ($self) {
     # start Xvnc
     $self->SUPER::activate;
 
     my $testapi_console = $self->{testapi_console};
-    my $ssh_args        = $self->{args};
-    my $gui             = $self->{args}->{gui};
+    my $ssh_args = $self->{args};
+    my $gui = $self->{args}->{gui};
 
-    my $hostname   = $ssh_args->{hostname} || die('we need a hostname to ssh to');
-    my $password   = $ssh_args->{password} || $testapi::password;
-    my $username   = $ssh_args->{username} || 'root';
+    my $hostname = $ssh_args->{hostname} || die('we need a hostname to ssh to');
+    my $password = $ssh_args->{password} || $testapi::password;
+    my $username = $ssh_args->{username} || 'root';
     my $sshcommand = $self->sshCommand($username, $hostname, $gui);
-    my $serial     = $self->{args}->{serial};
+    my $serial = $self->{args}->{serial};
 
     # Wait that ssh server on SUT is live on network
-    if (!$self->wait_for_ssh_port($hostname, timeout => (get_var('SSH_XTERM_WAIT_SUT_ALIVE_TIMEOUT') // 120))) {
+    if (!$self->wait_for_ssh_port($hostname, timeout => ($bmwqemu::vars{SSH_XTERM_WAIT_SUT_ALIVE_TIMEOUT} // 120))) {
         bmwqemu::diag("$hostname does not seems to have an active SSH server. Continuing anyway.");
     }
     $self->callxterm($sshcommand, "ssh:$testapi_console");
@@ -54,10 +48,9 @@ sub activate {
     }
 }
 
-sub wait_for_ssh_port {
-    my ($self, $hostname, %args) = @_;
+sub wait_for_ssh_port ($self, $hostname, %args) {
     $args{timeout} //= 120;
-    $args{port}    //= 22;
+    $args{port} //= 22;
 
     bmwqemu::diag("Wait for SSH on host $hostname (timeout: $args{timeout})");
 
@@ -72,9 +65,7 @@ sub wait_for_ssh_port {
 }
 
 # to be called on reconnect
-sub kill_ssh {
-    my ($self) = @_;
-
+sub kill_ssh ($self) {
     $self->backend->stop_ssh_serial;
 }
 

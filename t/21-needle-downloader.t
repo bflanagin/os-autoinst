@@ -10,7 +10,7 @@ use File::Touch;
 use File::Path qw(make_path remove_tree);
 use Test::MockModule;
 use Test::Warnings ':report_warnings';
-use Test::Output 'stderr_like';
+use Test::Output qw(stderr_like stderr_from);
 use Mojo::File qw(path tempdir);
 use OpenQA::Isotovideo::NeedleDownloader;
 use needle;
@@ -20,7 +20,7 @@ my $user_agent_mock = Test::MockModule->new('Mojo::UserAgent');
 my @queried_urls;
 $user_agent_mock->redefine(get => sub ($self, $url) {
         push(@queried_urls, $url);
-        return $user_agent_mock->original('get')->(@_);
+        return $user_agent_mock->original('get')->($self, $url);
 });
 
 # setup needle directory
@@ -49,24 +49,24 @@ is($downloader->download_limit, 150, 'by default limited to 150 downloads');
 subtest 'add relevant downloads' => sub {
     my @new_needles = (
         {
-            id         => 1,
-            name       => 'foo',
-            directory  => 'fixtures',
-            tags       => [qw(some tag)],
-            json_path  => '/needles/1/json',
+            id => 1,
+            name => 'foo',
+            directory => 'fixtures',
+            tags => [qw(some tag)],
+            json_path => '/needles/1/json',
             image_path => '/needles/1/image',
-            t_created  => '2018-01-01T00:00:00Z',
-            t_updated  => '2018-01-01T00:00:00Z',
+            t_created => '2018-01-01T00:00:00Z',
+            t_updated => '2018-01-01T00:00:00Z',
         },
         {
-            id         => 2,
-            name       => 'bar',
-            directory  => 'fixtures',
-            tags       => [qw(yet another tag)],
-            json_path  => '/needles/2/json',
+            id => 2,
+            name => 'bar',
+            directory => 'fixtures',
+            tags => [qw(yet another tag)],
+            json_path => '/needles/2/json',
             image_path => '/needles/2/image',
-            t_created  => '2018-01-01T00:00:00Z',
-            t_updated  => '2018-01-01T00:00:00Z',
+            t_created => '2018-01-01T00:00:00Z',
+            t_updated => '2018-01-01T00:00:00Z',
         },
     );
 
@@ -80,15 +80,15 @@ subtest 'add relevant downloads' => sub {
     my @expected_downloads = (
         {
             target => $needles_dir . '/foo.json',
-            url    => 'http://openqa/needles/1/json',
+            url => 'http://openqa/needles/1/json',
         },
         {
             target => $needles_dir . '/bar.json',
-            url    => 'http://openqa/needles/2/json',
+            url => 'http://openqa/needles/2/json',
         },
         {
             target => $needles_dir . '/bar.png',
-            url    => 'http://openqa/needles/2/image',
+            url => 'http://openqa/needles/2/image',
         }
     );
 
@@ -119,6 +119,34 @@ subtest 'download added URLs' => sub {
             'http://openqa/needles/2/json',
             'http://openqa/needles/2/image',
     ], 'right URLs queried');
+};
+
+subtest '_download_file' => sub {
+    $user_agent_mock->redefine(get => sub { Mojo::Transaction::HTTP->new });
+    my $http = Test::MockModule->new('Mojo::Transaction::HTTP');
+    $http->redefine(result => sub { Mojo::Message::Response->new->code(404) });
+    my $stderr = stderr_from {
+        $downloader->_download_file({url => 'http://1/', target => "$needles_dir/foo"});
+    };
+    like $stderr, qr{download new needle: http://1/.*server returned 404}s, 'Download returned 404';
+
+    $http->redefine(result => sub { Mojo::Message::Response->new->code(200) });
+    $stderr = stderr_from {
+        $downloader->_download_file({url => 'http://2/', target => "$needles_dir/bar"});
+    };
+    like $stderr, qr{download new needle: http://2/}, 'Download succeeded';
+    unlike $stderr, qr{server returned 404}, 'Download did not return 404';
+
+    $stderr = stderr_from {
+        $downloader->_download_file({url => 'http://3/', target => '/doesnotexist/baz'});
+    };
+    like $stderr, qr{unable to store download.*No such file or directory}, 'Could not write target';
+
+    $http->redefine(result => sub { die 'oops' });
+    $stderr = stderr_from {
+        $downloader->_download_file({url => 'http://3/', target => '/doesnotexist/baz'});
+    };
+    like $stderr, qr{internal error occurred when downloading.*oops}, 'internal error was logged';
 };
 
 remove_tree($needles_dir);

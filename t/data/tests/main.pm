@@ -8,14 +8,16 @@ use Cwd 'abs_path';
 use testapi;
 use testdistribution;
 
-testapi::set_distribution(testdistribution->new());
+my $distri = testdistribution->new();
+$distri->{script_run_die_on_timeout} = 1;
+testapi::set_distribution($distri);
 
 sub unregister_needle_tags ($tag) {
     my @a = @{needle::tags($tag)};
     for my $n (@a) { $n->unregister($tag); }
 }
 
-sub cleanup_needles {
+sub cleanup_needles () {
     unregister_needle_tags("ENV-VERSION-2") if check_var('VERSION', '1');
     unregister_needle_tags("ENV-VERSION-1") unless check_var('VERSION', '1');
 }
@@ -34,8 +36,8 @@ unless ($integration_tests) {
 }
 
 autotest::loadtest "tests/boot.pm";
+autotest::loadtest "tests/assert_screen.pm";
 unless ($integration_tests) {
-    autotest::loadtest "tests/assert_screen.pm";
     autotest::loadtest "tests/typing.pm";
     autotest::loadtest "tests/select_console_fail_test.pm";
     autotest::loadtest "tests/select_ssh_console_fail_test.pm";

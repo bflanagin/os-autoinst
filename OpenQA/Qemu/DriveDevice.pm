@@ -9,11 +9,11 @@ chain pointed to by 'drive'.
 =cut
 
 package OpenQA::Qemu::DriveDevice;
-use Mojo::Base 'OpenQA::Qemu::MutParams';
+use Mojo::Base 'OpenQA::Qemu::MutParams', -signatures;
 
 use OpenQA::Qemu::DrivePath;
 
-use constant DEVICE_POSTFIX    => '-device';
+use constant DEVICE_POSTFIX => '-device';
 use constant QEMU_IMAGE_FORMAT => 'qcow2';
 
 use Exporter 'import';
@@ -67,29 +67,17 @@ The number of I/O queues of the drive, esp. for NVMe devices
 =cut
 has 'num_queues';
 
-sub new_overlay_id {
-    my $self = shift;
+sub new_overlay_id ($self) { $self->last_overlay_id($self->last_overlay_id + 1)->last_overlay_id }
 
-    return $self->last_overlay_id($self->last_overlay_id + 1)
-      ->last_overlay_id;
-}
-
-sub node_name {
-    return shift->id . DEVICE_POSTFIX;
-}
+sub node_name ($self) { $self->id . DEVICE_POSTFIX }
 
 # For multipath
-sub _gen_node_name {
-    my ($self, $pcount, $pid) = @_;
+sub _gen_node_name ($self, $pcount, $pid) { $pcount > 1 ? $self->node_name . '-' . $pid : $self->node_name }
 
-    return $pcount > 1 ? $self->node_name . '-' . $pid : $self->node_name;
-}
-
-sub gen_cmdline {
-    my ($self) = @_;
-    my @cmdln  = ();
-    my $paths  = @{$self->paths} < 1 ? [OpenQA::Qemu::DrivePath->new()] : $self->paths;
-    my $pathn  = scalar @$paths;
+sub gen_cmdline ($self) {
+    my @cmdln = ();
+    my $paths = @{$self->paths} < 1 ? [OpenQA::Qemu::DrivePath->new()] : $self->paths;
+    my $pathn = scalar @$paths;
 
     # First create params which tell QEMU where the drive content is and what
     # format it is using
@@ -107,8 +95,8 @@ sub gen_cmdline {
             push(@params, 'bus=' . $path->controller->id . '.0');
         }
         # Configure bootindex only for first path
-        $self->_push_ifdef(\@params, 'bootindex=',  $self->bootindex) if (!$path->id || $path->id eq 'path0');
-        $self->_push_ifdef(\@params, 'serial=',     $self->serial);
+        $self->_push_ifdef(\@params, 'bootindex=', $self->bootindex) if (!$path->id || $path->id eq 'path0');
+        $self->_push_ifdef(\@params, 'serial=', $self->serial);
         $self->_push_ifdef(\@params, 'num_queues=', $self->num_queues) if (($self->num_queues // -1) != -1);
         push(@cmdln, ('-device', join(',', @params)));
     }
@@ -116,33 +104,22 @@ sub gen_cmdline {
     return @cmdln;
 }
 
-sub gen_qemu_img_cmdlines {
-    my $self = shift;
+sub gen_qemu_img_cmdlines ($self) { $self->drive->gen_qemu_img_cmdlines() }
 
-    return $self->drive->gen_qemu_img_cmdlines();
-}
-
-sub gen_qemu_img_convert {
-    my ($self, $img_dir, $name, $qemu_compress_qcow) = @_;
-
+sub gen_qemu_img_convert ($self, $img_dir, $name, $qemu_compress_qcow) {
     # By compressing we are making the images self contained, i.e. they are
     # portable by not requiring backing files referencing the openQA instance.
     # Compressing takes longer but the transfer takes shorter amount of time.
     my $compress = $qemu_compress_qcow;
-    my @cmd      = qw(convert);
+    my @cmd = qw(convert);
     push @cmd, qw(-c) if $compress;
     push @cmd, ('-O', QEMU_IMAGE_FORMAT, $self->drive->file, "$img_dir/$name");
     return \@cmd;
 }
 
-sub gen_unlink_list {
-    my $self = shift;
+sub gen_unlink_list ($self) { $self->drive->gen_unlink_list() }
 
-    return $self->drive->gen_unlink_list();
-}
-
-sub for_each_overlay {
-    my ($self, $sub) = @_;
+sub for_each_overlay ($self, $sub) {
     my $overlay = $self->drive;
 
     while (defined $overlay) {
@@ -151,28 +128,24 @@ sub for_each_overlay {
     }
 }
 
-sub _to_map {
-    my $self     = shift;
+sub _to_map ($self) {
     my @overlays = ();
-    my @paths    = map { $_->_to_map() } @{$self->paths};
+    my @paths = map { $_->_to_map() } @{$self->paths};
 
-    $self->for_each_overlay(sub {
-            my $ol = shift;
-
+    $self->for_each_overlay(sub ($ol) {
             push(@overlays, $ol->_to_map());
     });
 
     return {drives => \@overlays,
-        model      => $self->model,
-        paths      => \@paths,
-        bootindex  => $self->bootindex,
-        serial     => $self->serial,
-        id         => $self->id,
+        model => $self->model,
+        paths => \@paths,
+        bootindex => $self->bootindex,
+        serial => $self->serial,
+        id => $self->id,
         num_queues => $self->num_queues};
 }
 
-sub _from_map {
-    my ($self, $map, $cont_conf, $snap_conf) = @_;
+sub _from_map ($self, $map, $cont_conf, $snap_conf) {
     my $drive = OpenQA::Qemu::BlockDev->new()->_from_map($map->{drives}, $snap_conf);
     my @paths = map {
         OpenQA::Qemu::DrivePath->new()->_from_map($_, $cont_conf)
@@ -187,8 +160,6 @@ sub _from_map {
       ->num_queues($map->{num_queues});
 }
 
-sub CARP_TRACE {
-    return 'OpenQA::Qemu::DriveDevice(' . (shift->id || '') . ')';
-}
+sub CARP_TRACE ($self) { 'OpenQA::Qemu::DriveDevice(' . ($self->id || '') . ')' }
 
 1;

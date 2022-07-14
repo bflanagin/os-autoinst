@@ -2,11 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 package consoles::virtio_terminal;
 
-use Mojo::Base -strict;
+use Mojo::Base 'consoles::console', -signatures;
 use autodie;
-
-use base 'consoles::console';
-
 use Mojo::File 'path';
 use Socket qw(SOCK_NONBLOCK PF_UNIX SOCK_STREAM sockaddr_un);
 use Errno qw(EAGAIN EWOULDBLOCK);
@@ -15,7 +12,6 @@ use Carp 'croak';
 use Scalar::Util 'blessed';
 use Cwd;
 use consoles::serial_screen ();
-use testapi qw(check_var get_var);
 use Fcntl;
 
 our $VERSION;
@@ -43,43 +39,33 @@ uses two pipes to communicate with virtio_consoles from qemu.
 
 =cut
 
-sub new {
-    my ($class, $testapi_console, $args) = @_;
+sub new ($class, $testapi_console, $args) {
     my $self = $class->SUPER::new($testapi_console, $args);
-    $self->{fd_read}        = 0;
-    $self->{fd_write}       = 0;
-    $self->{pipe_prefix}    = $self->{args}->{socked_path} // cwd() . '/virtio_console';
-    $self->{snapshots}      = {};
+    $self->{fd_read} = 0;
+    $self->{fd_write} = 0;
+    $self->{pipe_prefix} = $self->{args}->{socked_path} // cwd() . '/virtio_console';
+    $self->{snapshots} = {};
     $self->{preload_buffer} = '';
     return $self;
 }
 
-sub screen {
-    my ($self) = @_;
-    return $self->{screen};
+sub screen ($self) { $self->{screen} }
+
+sub disable ($self) {
+    return undef unless $self->{fd_read} > 0;
+    close $self->{fd_read};
+    close $self->{fd_write};
+    $self->{fd_read} = 0;
+    $self->{fd_write} = 0;
+    $self->{screen} = undef;
 }
 
-sub disable {
-    my ($self) = @_;
-    if ($self->{fd_read} > 0) {
-        close $self->{fd_read};
-        close $self->{fd_write};
-        $self->{fd_read}  = 0;
-        $self->{fd_write} = 0;
-        $self->{screen}   = undef;
-    }
-}
-
-sub save_snapshot {
-    my ($self, $name) = @_;
-
+sub save_snapshot ($self, $name) {
     $self->set_snapshot($name, 'activated', $self->{activated});
-    $self->set_snapshot($name, 'buffer',    $self->{screen} ? $self->{screen}->peak() : $self->{preload_buffer});
+    $self->set_snapshot($name, 'buffer', $self->{screen} ? $self->{screen}->peak() : $self->{preload_buffer});
 }
 
-sub load_snapshot {
-    my ($self, $name) = @_;
-
+sub load_snapshot ($self, $name) {
     $self->{activated} = $self->get_snapshot($name, 'activated') // 0;
     my $buffer = $self->get_snapshot($name, 'buffer') // '';
     if (defined($self->{screen})) {
@@ -89,18 +75,12 @@ sub load_snapshot {
     }
 }
 
-sub get_snapshot {
-    my ($self, $name, $key) = @_;
-    return undef unless defined($name);
-
+sub get_snapshot ($self, $name, $key = undef) {
     my $snapshot = $self->{snapshots}->{$name};
     return (defined($key) && $snapshot) ? $snapshot->{$key} : $snapshot;
 }
 
-sub set_snapshot {
-    my ($self, $name, $key, $value) = @_;
-    return undef if (!defined($name) || !defined($key));
-
+sub set_snapshot ($self, $name, $key, $value = undef) {
     $self->{snapshots}->{$name}->{$key} = $value;
 }
 
@@ -108,32 +88,20 @@ sub set_snapshot {
 This is a helper method for system which do not have F_GETPIPE_SZ in
 there Fcntl bindings. See https://perldoc.perl.org/Fcntl.html
 =cut
-sub F_GETPIPE_SZ
-{
-    return eval 'no warnings "all"; Fcntl::F_GETPIPE_SZ;' || 1032;
-}
+sub F_GETPIPE_SZ () { eval 'no warnings "all"; Fcntl::F_GETPIPE_SZ;' || 1032 }
 
 =head2 F_SETPIPE_SZ
 This is a helper method for system which do not have F_SETPIPE_SZ in
 there Fcntl bindings. See: https://perldoc.perl.org/Fcntl.html
 =cut
-sub F_SETPIPE_SZ
-{
-    return eval 'no warnings "all"; Fcntl::F_SETPIPE_SZ;' || 1031;
-}
+sub F_SETPIPE_SZ () { eval 'no warnings "all"; Fcntl::F_SETPIPE_SZ;' || 1031 }
 
-sub set_pipe_sz
-{
+sub set_pipe_sz ($self, $fd, $newsize) {
     no autodie;
-    my ($self, $fd, $newsize) = @_;
     return fcntl($fd, F_SETPIPE_SZ(), int($newsize));
 }
 
-sub get_pipe_sz
-{
-    my ($self, $fd) = @_;
-    return fcntl($fd, F_GETPIPE_SZ(), 0);
-}
+sub get_pipe_sz ($self, $fd) { fcntl($fd, F_GETPIPE_SZ(), 0) }
 
 =head2 open_pipe
 
@@ -145,8 +113,7 @@ Returns the read and write file descriptors for the open sockets,
 otherwise it dies.
 
 =cut
-sub open_pipe {
-    my ($self) = @_;
+sub open_pipe ($self) {
     bmwqemu::log_call(pipe_prefix => $self->{pipe_prefix});
 
     sysopen(my $fd_w, $self->{pipe_prefix} . '.in', O_WRONLY)
@@ -154,7 +121,7 @@ sub open_pipe {
     sysopen(my $fd_r, $self->{pipe_prefix} . '.out', O_NONBLOCK | O_RDONLY)
       or die "Can't open out pipe for reading $!";
 
-    my $newsize = get_var('VIRTIO_CONSOLE_PIPE_SZ', path('/proc/sys/fs/pipe-max-size')->slurp());
+    my $newsize = $bmwqemu::vars{VIRTIO_CONSOLE_PIPE_SZ} // path('/proc/sys/fs/pipe-max-size')->slurp();
     for my $fd (($fd_w, $fd_r)) {
         my $old = $self->get_pipe_sz($fd) or die("Unable to read PIPE_SZ");
         {
@@ -172,20 +139,16 @@ sub open_pipe {
     return ($fd_r, $fd_w);
 }
 
-sub activate {
-    my ($self) = @_;
-    if (!check_var('VIRTIO_CONSOLE', 0)) {
-        ($self->{fd_read}, $self->{fd_write}) = $self->open_pipe() unless ($self->{fd_read});
-        $self->{screen}                 = consoles::serial_screen::->new($self->{fd_read}, $self->{fd_write});
-        $self->{screen}->{carry_buffer} = $self->{preload_buffer};
-        $self->{preload_buffer}         = '';
-    }
-    else {
-        croak 'VIRTIO_CONSOLE is set 0, so no virtio-serial and virtconsole devices will be available to use with this console.';
-    }
+sub activate ($self) {
+    croak 'VIRTIO_CONSOLE is set 0, so no virtio-serial and virtconsole devices will be available to use with this console'
+      unless ($bmwqemu::vars{VIRTIO_CONSOLE} // 1);
+    ($self->{fd_read}, $self->{fd_write}) = $self->open_pipe() unless ($self->{fd_read});
+    $self->{screen} = consoles::serial_screen::->new($self->{fd_read}, $self->{fd_write});
+    $self->{screen}->{carry_buffer} = $self->{preload_buffer};
+    $self->{preload_buffer} = '';
     return;
 }
 
-sub is_serial_terminal { 1 }
+sub is_serial_terminal ($self, @) { 1 }
 
 1;

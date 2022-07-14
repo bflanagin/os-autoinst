@@ -3,13 +3,13 @@
 
 package OpenQA::Isotovideo::Interface;
 
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 
 # version of the test API and the API relevant to the worker
 # -> increment on every change of such APIs
 # -> never move that variable to another place (when refactoring)
 #    because it may be accessed by the tests itself
-our $version = 23;
+our $version = 26;
 
 # major version of the (web socket) API relevant to the developer mode
 # -> increment when making non-backward compatible changes to that API

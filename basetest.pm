@@ -4,48 +4,47 @@
 
 package basetest;
 
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 use autodie ':all';
 
 use bmwqemu ();
 use ocr;
-use POSIX;
-use testapi  ();
+use testapi ();
 use autotest ();
 use MIME::Base64 'decode_base64';
 use Mojo::File 'path';
 
-my $serial_file_pos  = 0;
+my $serial_file_pos = 0;
 my $autoinst_log_pos = 0;
 
 # enable strictures and warnings in all tests globally but allow signatures
-sub import {
+sub import ($self, @) {
     strict->import;
     warnings->import;
     warnings->unimport('experimental::signatures');
 }
 
-sub new {
-    my ($class, $category) = @_;
+sub new ($class, $category = undef) {
     $category ||= 'unknown';
     my $self = {class => $class};
-    $self->{lastscreenshot}         = undef;
-    $self->{details}                = [];
-    $self->{result}                 = undef;
-    $self->{running}                = 0;
-    $self->{category}               = $category;
-    $self->{test_count}             = 0;
-    $self->{screen_count}           = 0;
-    $self->{wav_fn}                 = undef;
-    $self->{dents}                  = 0;
+    $self->{lastscreenshot} = undef;
+    $self->{details} = [];
+    $self->{result} = undef;
+    $self->{running} = 0;
+    $self->{category} = $category;
+    $self->{test_count} = 0;
+    $self->{screen_count} = 0;
+    $self->{wav_fn} = undef;
+    $self->{dents} = 0;
     $self->{post_fail_hook_running} = 0;
-    $self->{timeoutcounter}         = 0;
-    $self->{activated_consoles}     = [];
-    $self->{name}                   = $class;
-    $self->{serial_failures}        = [];
-    $self->{autoinst_failures}      = [];
-    $self->{fatal_failure}          = 0;
-    $self->{execution_time}         = 0;
+    $self->{timeoutcounter} = 0;
+    $self->{activated_consoles} = [];
+    $self->{name} = $class;
+    $self->{serial_failures} = [];
+    $self->{autoinst_failures} = [];
+    $self->{fatal_failure} = 0;
+    $self->{execution_time} = 0;
+    $self->{test_start_time} = 0;
     return bless $self, $class;
 }
 
@@ -74,8 +73,7 @@ Can eg. check vars{BIGTEST}, vars{LIVETEST}
 
 =cut
 
-sub is_applicable {
-    my ($self) = @_;
+sub is_applicable ($self) {
     if ($bmwqemu::vars{EXCLUDE_MODULES}) {
         my %excluded = map { $_ => 1 } split(/\s*,\s*/, $bmwqemu::vars{EXCLUDE_MODULES});
 
@@ -102,9 +100,7 @@ Return a hash of flags that are either there or not
 
 =cut
 
-sub test_flags {
-    return {};
-}
+sub test_flags ($self) { {} }
 
 =head2 post_fail_hook
 
@@ -112,9 +108,7 @@ Function is run after test has failed to e.g. recover log files
 
 =cut
 
-sub post_fail_hook {
-    return 1;
-}
+sub post_fail_hook ($self) { 1 }
 
 =head2 _framenumber_to_timerange
 
@@ -122,28 +116,23 @@ Create a media fragment time from a given framenumber
 
 =cut
 
-sub _framenumber_to_timerange {
-    my $frame = shift;
+sub _framenumber_to_timerange ($frame) {
     return [sprintf("%.2f", $frame / 24.0), sprintf("%.2f", ($frame + 1) / 24.0)];
 }
 
-sub record_screenmatch {
-    my ($self, $img, $match, $tags, $failed_needles, $frame) = @_;
-    $tags           ||= [];
-    $failed_needles ||= [];
-
+sub record_screenmatch ($self, $img, $match, $tags = [], $failed_needles = [], $frame = undef) {
     my $serialized_match = $self->_serialize_match($match);
-    my $properties       = $match->{needle}->{properties} || [];
-    my $result           = {
-        needle     => $serialized_match->{name},
-        area       => $serialized_match->{area},
-        error      => $serialized_match->{error},
-        json       => $serialized_match->{json},
-        tags       => [@$tags],                            # make a copy
-        properties => [@$properties],                      # make a copy
-        frametime  => _framenumber_to_timerange($frame),
+    my $properties = $match->{needle}->{properties} || [];
+    my $result = {
+        needle => $serialized_match->{name},
+        area => $serialized_match->{area},
+        error => $serialized_match->{error},
+        json => $serialized_match->{json},
+        tags => [@$tags],    # make a copy
+        properties => [@$properties],    # make a copy
+        frametime => _framenumber_to_timerange($frame),
         screenshot => $self->next_resultname('png'),
-        result     => 'ok',
+        result => 'ok',
     };
 
     # make sure needle is blessed
@@ -152,7 +141,7 @@ sub record_screenmatch {
     # When the needle has the workaround property,
     # mark the result as dent and increase the dents
     if (my $workaround = $foundneedle->has_property('workaround')) {
-        $result->{dent}   = 1;
+        $result->{dent} = 1;
         $result->{result} = "softfail";
 
         # write a test result file
@@ -184,16 +173,14 @@ serialize a match result from needle::search
 
 =cut
 
-sub _serialize_match {
-    my ($self, $candidate) = @_;
-
-    my $name     = $candidate->{needle}->{name};
+sub _serialize_match ($self, $candidate) {
+    my $name = $candidate->{needle}->{name};
     my $jsonfile = $candidate->{needle}->{file};
-    my %match    = (
-        name  => $name,
+    my %match = (
+        name => $name,
         error => $candidate->{error},
-        area  => [],
-        json  => $jsonfile
+        area => [],
+        json => $jsonfile
     );
 
     if (my $unregistered = $candidate->{needle}->{unregistered}) {
@@ -204,7 +191,7 @@ sub _serialize_match {
         for my $i (qw(x y w h result)) {
             $na->{$i} = $area->{$i};
         }
-        $na->{similarity}  = int($area->{similarity} * 100);
+        $na->{similarity} = int($area->{similarity} * 100);
         $na->{click_point} = $area->{click_point} if exists $area->{click_point};
         push @{$match{area}}, $na;
     }
@@ -212,15 +199,13 @@ sub _serialize_match {
     return \%match;
 }
 
-sub record_screenfail {
-    my $self    = shift;
-    my %args    = @_;
-    my $img     = $args{img};
+sub record_screenfail ($self, %args) {
+    my $img = $args{img};
     my $needles = $args{needles} || [];
-    my $tags    = $args{tags}    || [];
-    my $status  = $args{result}  || 'fail';
+    my $tags = $args{tags} || [];
+    my $status = $args{result} || 'fail';
     my $overall = $args{overall};    # whether and how to set global test result
-    my $frame   = $args{frame};
+    my $frame = $args{frame};
 
     my $candidates;
     for my $cand (@{$needles || []}) {
@@ -229,12 +214,12 @@ sub record_screenfail {
 
     my $result = {
         screenshot => $self->next_resultname('png'),
-        result     => $status,
-        frametime  => _framenumber_to_timerange($frame),
+        result => $status,
+        frametime => _framenumber_to_timerange($frame),
     };
 
     $result->{needles} = $candidates if $candidates;
-    $result->{tags}    = [@$tags]    if $tags;         # make a copy
+    $result->{tags} = [@$tags] if $tags;    # make a copy
 
     my $fn = join('/', bmwqemu::result_dir(), $result->{screenshot});
     $img->write_with_thumbnail($fn);
@@ -245,31 +230,26 @@ sub record_screenfail {
     return $result;
 }
 
-sub remove_last_result {
-    my $self = shift;
+sub remove_last_result ($self) {
     --$self->{test_count};
     return pop @{$self->{details}};
 }
 
-sub details {
-    my ($self) = @_;
+sub details ($self) {
     return $self->{details};
 }
 
-sub result {
-    my ($self, $result) = @_;
+sub result ($self, $result = undef) {
     $self->{result} = $result if $result;
     return $self->{result} || 'na';
 }
 
-sub start {
-    my ($self) = @_;
+sub start ($self) {
     $self->{running} = 1;
     autotest::set_current_test($self);
 }
 
-sub done {
-    my $self = shift;
+sub done ($self) {
     $self->{running} = 0;
     $self->{result} ||= 'ok';
     unless ($self->{test_count}) {
@@ -278,58 +258,62 @@ sub done {
     autotest::set_current_test(undef);
 }
 
-sub fail_if_running {
-    my $self = shift;
+sub fail_if_running ($self) {
     $self->{result} = 'fail' if $self->{result};
     autotest::set_current_test(undef);
 }
 
-sub skip_if_not_running {
-    my ($self) = @_;
-
+sub skip_if_not_running ($self) {
     $self->{result} = 'skip' if !$self->{result};
     autotest::set_current_test(undef);
 }
 
 
-sub timeout_screenshot {
-    my ($self) = @_;
-
+sub timeout_screenshot ($self) {
     my $n = ++$self->{timeoutcounter};
     $self->take_screenshot(sprintf("timeout-%02i", $n));
 }
 
-sub pre_run_hook {
-    my ($self) = @_;
-
+sub pre_run_hook ($self) {
     # you should overload that in test classes
     return;
 }
 
-sub post_run_hook {
-    my ($self) = @_;
-
+sub post_run_hook ($self) {
     # you should overload that in test classes
     return;
 }
 
-sub run_post_fail {
-    my ($self, $msg) = @_;
+sub run_post_fail ($self, $msg) {
+    my $post_fail_hook_start_time = time;
     unless ($bmwqemu::vars{_SKIP_POST_FAIL_HOOKS}) {
         $self->{post_fail_hook_running} = 1;
         eval { $self->post_fail_hook; };
         bmwqemu::diag("post_fail_hook failed: $@") if $@;
         $self->{post_fail_hook_running} = 0;
+
+        # There might be more messages on serial now.
+        # Read them now to not stumble upon them in the next module.
+        $self->get_new_serial_output();
     }
+
     $self->fail_if_running();
+    $self->compute_test_execution_time();
+    my $post_fail_hook_execution_time = execution_time($post_fail_hook_start_time);
+    bmwqemu::modstate("post fail hooks runtime: $post_fail_hook_execution_time s");
     die $msg . "\n";
 }
 
-sub execution_time { time - shift }
+sub execution_time ($now) { time - $now }
 
-sub runtest {
-    my ($self) = @_;
-    my $starttime = time;
+sub compute_test_execution_time ($self) {
+    # Set the execution time for a general time spent
+    $self->{execution_time} = execution_time($self->{test_start_time});
+    bmwqemu::modstate(sprintf("finished %s %s (runtime: %d s)", $self->{name}, $self->{category}, $self->{execution_time}));
+}
+
+sub runtest ($self) {
+    $self->{test_start_time} = time;
 
     my $died;
     my $name = $self->{name};
@@ -378,19 +362,16 @@ sub runtest {
         $self->run_post_fail("test $name failed");
     }
 
+    $self->compute_test_execution_time();
     $self->done();
-    $self->{execution_time} = execution_time($starttime);
-    bmwqemu::diag(sprintf("||| finished %s %s (runtime: %d s)", $name, $self->{category}, $self->{execution_time}));
     return;
 }
 
-sub save_test_result {
-    my ($self) = @_;
-
+sub save_test_result ($self) {
     my $result = {
-        details        => $self->details(),
-        result         => $self->result(),
-        dents          => $self->{dents},
+        details => $self->details(),
+        result => $self->result(),
+        dents => $self->{dents},
         execution_time => $self->{execution_time},
     };
     $result->{extra_test_results} = $self->{extra_test_results} if $self->{extra_test_results};
@@ -401,10 +382,9 @@ sub save_test_result {
     return $result;
 }
 
-sub next_resultname {
-    my ($self, $type, $name) = @_;
+sub next_resultname ($self, $type, $name = undef) {
     my $testname = $self->{name};
-    my $count    = ++$self->{test_count};
+    my $count = ++$self->{test_count};
     if ($name) {
         return "$testname-$count.$name.$type";
     }
@@ -413,9 +393,7 @@ sub next_resultname {
     }
 }
 
-sub write_resultfile {
-    my ($self, $filename, $output) = @_;
-
+sub write_resultfile ($self, $filename, $output) {
     path(bmwqemu::result_dir(), $filename)->spurt($output);
 }
 
@@ -426,23 +404,19 @@ sub write_resultfile {
 Record result file to be parsed when evaluating test results, for example
 within the openQA web interface.
 =cut
-sub record_resultfile {
-    my ($self, $title, $output, %nargs) = @_;
+sub record_resultfile ($self, $title, $output, %nargs) {
     my $filename = $self->next_resultname('txt', $nargs{resultname});
-    my $detail   = {
-        title  => $title,
+    my $detail = {
+        title => $title,
         result => $nargs{result},
-        text   => $filename,
+        text => $filename,
     };
     push @{$self->{details}}, $detail;
     $self->write_resultfile($filename, $output);
 }
 
-sub record_serialresult {
-    my ($self, $ref, $res, $string) = @_;
-
+sub record_serialresult ($self, $ref, $res, $string = undef) {
     $string //= '';
-
     # take screenshot for documentation (screenshot does not represent fail itself)
     $self->take_screenshot() unless (testapi::is_serial_terminal);
 
@@ -453,22 +427,18 @@ sub record_serialresult {
     return undef;
 }
 
-sub record_soft_failure_result {
-    my ($self, $reason, %args) = @_;
+sub record_soft_failure_result ($self, $reason = undef, %args) {
     $reason //= '(no reason specified)';
-
-    my $result   = $self->record_testresult('softfail', %args);
+    my $result = $self->record_testresult('softfail', %args);
     my $filename = $self->next_resultname('txt');
     $result->{title} = 'Soft Failed';
-    $result->{text}  = $filename;
+    $result->{text} = $filename;
     $self->write_resultfile($filename, "# Soft Failure:\n$reason\n");
     $self->{dents}++;
     return undef;
 }
 
-sub register_extra_test_results {
-    my ($self, $tests) = @_;
-
+sub register_extra_test_results ($self, $tests) {
     $self->{extra_test_results} //= [];
     foreach my $t (@{$tests}) {
         $t->{script} = $self->{script} if (!defined($t->{script}) || $t->{script} eq 'unk');
@@ -484,10 +454,8 @@ test details and returns it.
 
 =cut
 
-sub record_testresult {
-    my ($self, $result, %args) = @_;
+sub record_testresult ($self, $result = undef, %args) {
     $result //= 'unk';
-
     # assign result as overall result unless it is already worse
     my $current_result = \$self->{result};
     if ($result eq 'fail') {
@@ -519,9 +487,7 @@ internal function to add a screenshot to an existing result structure
 
 =cut
 
-sub _result_add_screenshot {
-    my ($self, $result) = @_;
-
+sub _result_add_screenshot ($self, $result) {
     my $rsp = autotest::query_isotovideo('backend_last_screenshot_data');
     my $img = $rsp->{image};
     return $result unless $img;
@@ -530,7 +496,7 @@ sub _result_add_screenshot {
     return $result unless $img;
 
     $result->{screenshot} = $self->next_resultname('png');
-    $result->{frametime}  = _framenumber_to_timerange($rsp->{frame});
+    $result->{frametime} = _framenumber_to_timerange($rsp->{frame});
 
     my $fn = join('/', bmwqemu::result_dir(), $result->{screenshot});
     $img->write_with_thumbnail($fn);
@@ -544,10 +510,8 @@ add screenshot with 'unk' result if an image is available
 
 =cut
 
-sub take_screenshot {
-    my ($self, $res) = @_;
-    $res ||= 'unk';
-
+sub take_screenshot ($self, $res = undef) {
+    $res //= 'unk';
     my $result = $self->record_testresult($res);
     $self->_result_add_screenshot($result);
 
@@ -557,22 +521,19 @@ sub take_screenshot {
     return $result;
 }
 
-sub capture_filename {
-    my ($self) = @_;
+sub capture_filename ($self) {
     my $fn = $self->{name} . "-captured.wav";
     die "audio capture already in progress. Stop it first!\n" if ($self->{wav_fn});
     $self->{wav_fn} = $fn;
     return $fn;
 }
 
-sub stop_audiocapture {
-    my ($self) = @_;
-
+sub stop_audiocapture ($self) {
     bmwqemu::log_call();
     autotest::query_isotovideo('backend_stop_audiocapture');
 
     my $result = {
-        audio  => $self->{wav_fn},
+        audio => $self->{wav_fn},
         result => 'unk',
     };
 
@@ -581,9 +542,7 @@ sub stop_audiocapture {
     return $result;
 }
 
-sub verify_sound_image {
-    my ($self, $imgpath, $mustmatch, $check) = @_;
-
+sub verify_sound_image ($self, $imgpath, $mustmatch, $check) {
     my $rsp = autotest::query_isotovideo('backend_verify_image', {imgpath => $imgpath, mustmatch => $mustmatch});
 
     my $img = tinycv::read($imgpath);
@@ -621,16 +580,12 @@ Return a listref containing hashrefs like this:
 
 =cut
 
-sub ocr_checklist {
-    return [];
-}
+sub ocr_checklist () { [] }
 
-sub standstill_detected {
-    my ($self, $lastscreenshot) = @_;
-
+sub standstill_detected ($self, $lastscreenshot) {
     $self->record_screenfail(
-        img     => $lastscreenshot,
-        result  => 'fail',
+        img => $lastscreenshot,
+        result => 'fail',
         overall => 'fail'
     );
 
@@ -643,8 +598,7 @@ sub standstill_detected {
 # this is called if the test failed and the framework loaded a VM
 # snapshot - all consoles activated in the test's run function loose their
 # state
-sub rollback_activated_consoles {
-    my ($self) = @_;
+sub rollback_activated_consoles ($self) {
     for my $console (@{$self->{activated_consoles}}) {
         # the backend will only reset its state, and call activate
         # the next time - the console itself might actually not be
@@ -662,39 +616,37 @@ sub rollback_activated_consoles {
     return;
 }
 
-sub search_for_expected_serial_failures {
-    my ($self) = @_;
+sub search_for_expected_serial_failures ($self) {
     if (defined $bmwqemu::vars{BACKEND} && $bmwqemu::vars{BACKEND} eq 'qemu') {
         $self->parse_serial_output_qemu();
     }
 }
 
-sub get_serial_output_json {
-    my ($self) = @_;
-
+sub get_new_serial_output ($self) {
     myjsonrpc::send_json($autotest::isotovideo, {cmd => 'read_serial', position => $serial_file_pos});
-    return myjsonrpc::read_json($autotest::isotovideo);
+    my $json = myjsonrpc::read_json($autotest::isotovideo);
+    $serial_file_pos = $json->{position};
+    return $json->{serial};
 }
 
-sub parse_serial_output_qemu {
-    my ($self) = @_;
+sub parse_serial_output_qemu ($self) {
     # serial failures defined in distri (test can override them)
     my $failures = $self->{serial_failures};
 
-    my $json = $self->get_serial_output_json($serial_file_pos);
-    my $die  = 0;
+    my $serial = $self->get_new_serial_output();
+    my $die = 0;
     my %regexp_matched;
     # loop line by line
-    for my $line (split(/^/, $json->{serial})) {
+    for my $line (split(/^/, $serial)) {
         chomp $line;
         for my $regexp_table (@{$failures}) {
-            my $regexp  = $regexp_table->{pattern};
+            my $regexp = $regexp_table->{pattern};
             my $message = $regexp_table->{message};
-            my $type    = $regexp_table->{type};
+            my $type = $regexp_table->{type};
 
             # Input parameters validation
             die "Wrong type defined for serial failure. Only 'info', 'soft', 'hard' or 'fatal' allowed. Got: $type" if $type !~ /^info|soft|hard|fatal$/;
-            die "Message not defined for serial failure for the pattern: '$regexp', type: $type"                    if !defined $message;
+            die "Message not defined for serial failure for the pattern: '$regexp', type: $type" if !defined $message;
 
             # If you want to match a simple string please be sure that you create it with quotemeta
             if (!exists $regexp_matched{$regexp} and $line =~ /$regexp/) {
@@ -704,8 +656,8 @@ sub parse_serial_output_qemu {
                     $fail_type = 'ok';
                 }
                 elsif ($type =~ 'hard|fatal') {
-                    $die                   = 1;
-                    $fail_type             = 'fail';
+                    $die = 1;
+                    $fail_type = 'fail';
                     $self->{fatal_failure} = $type eq 'fatal';
                 }
                 $self->record_resultfile($message, $message . " - Serial error: $line", result => $fail_type);
@@ -713,7 +665,6 @@ sub parse_serial_output_qemu {
             }
         }
     }
-    $serial_file_pos = $json->{position};
     die "Got serial hard failure" if $die;
     return;
 }

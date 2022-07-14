@@ -26,10 +26,12 @@ RUN zypper in -y -C \
        cpio \
        gcc-c++ \
        git-core \
+       icewm \
        ninja \
        perl-base \
        pkg-config \
        procps \
+       python3-Pillow-tk \
        python3-black \
        python3-setuptools \
        python3-yamllint \
@@ -38,17 +40,19 @@ RUN zypper in -y -C \
        qemu-x86 \
        sudo \
        which \
+       xorg-x11-Xvnc \
+       xterm \
+       xterm-console \
        'perl(B::Deparse)' \
        'perl(Benchmark)' \
        'perl(Carp)' \
        'perl(Carp::Always)' \
-       'perl(Class::Accessor::Fast)' \
+       'perl(Code::TidyAll)' \
        'perl(Config)' \
        'perl(Cpanel::JSON::XS)' \
        'perl(Crypt::DES)' \
        'perl(Cwd)' \
        'perl(Data::Dumper)' \
-       'perl(Devel::Cover)' \
        'perl(Devel::Cover)' \
        'perl(Devel::Cover::Report::Codecov)' \
        'perl(Digest::MD5)' \
@@ -102,6 +106,7 @@ RUN zypper in -y -C \
        'perl(Scalar::Util)' \
        'perl(Socket)' \
        'perl(Socket::MsgHdr)' \
+       'perl(Template::Toolkit)' \
        'perl(Term::ANSIColor)' \
        'perl(Test::Fatal)' \
        'perl(Test::Mock::Time)' \

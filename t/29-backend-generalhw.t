@@ -26,20 +26,21 @@ use testapi;
 # setup test variables
 my $cmd_dir = tempdir;
 my $cmd_ctl = "$cmd_dir/ctl";
-$bmwqemu::vars{WORKER_HOSTNAME}         = 'worker-hostname';
-$bmwqemu::vars{GENERAL_HW_CMD_DIR}      = $cmd_dir;
-$bmwqemu::vars{GENERAL_HW_POWERON_CMD}  = 'ctl poweron';
+$bmwqemu::vars{WORKER_HOSTNAME} = 'worker-hostname';
+$bmwqemu::vars{GENERAL_HW_CMD_DIR} = $cmd_dir;
+$bmwqemu::vars{GENERAL_HW_POWERON_CMD} = 'ctl poweron';
 $bmwqemu::vars{GENERAL_HW_POWEROFF_CMD} = 'ctl poweroff';
-$bmwqemu::vars{GENERAL_HW_SOL_CMD}      = 'ctl console';
-$bmwqemu::vars{GENERAL_HW_SOL_ARGS}     = 'console';
-$bmwqemu::vars{GENERAL_HW_FLASH_CMD}    = 'ctl flash';
-$bmwqemu::vars{GENERAL_HW_FLASH_ARGS}   = 'light';
-$bmwqemu::vars{GENERAL_HW_VNC_IP}       = 'vnc.server';
-$bmwqemu::vars{HDD_1}                   = '/hdd';
-$bmwqemu::vars{HDDSIZEGB_1}             = 5;
+$bmwqemu::vars{GENERAL_HW_SOL_CMD} = 'ctl console';
+$bmwqemu::vars{GENERAL_HW_SOL_ARGS} = 'console';
+$bmwqemu::vars{GENERAL_HW_FLASH_CMD} = 'ctl flash';
+$bmwqemu::vars{GENERAL_HW_FLASH_ARGS} = 'light';
+$bmwqemu::vars{GENERAL_HW_VNC_IP} = 'vnc.server';
+$bmwqemu::vars{GENERAL_HW_VNC_PORT} = 5900;
+$bmwqemu::vars{HDD_1} = '/hdd';
+$bmwqemu::vars{HDDSIZEGB_1} = 5;
 
 # initialize distribution and backend
-my $distri  = $testapi::distri = distribution->new;
+my $distri = $testapi::distri = distribution->new;
 my $backend = backend::generalhw->new;
 
 # mock IPC::Run and the VNC console
@@ -49,7 +50,7 @@ $ipc_run_mock->redefine(run => sub {
         my ($args, $stdin, $stdout, $stderr) = @_;
         die $fake_ipc_error if $fake_ipc_error;
         push @invoked_cmds, $args;
-        $$stdin  = 'stdin';
+        $$stdin = 'stdin';
         $$stdout = 'stdout';
         $$stderr = 'stderr';
 });
@@ -58,7 +59,11 @@ $serial_mock->redefine(start_serial_grab => sub { push @invoked_cmds, 'start_ser
 my $vnc_mock = Test::MockModule->new('consoles::VNC');
 my @vnc_logins;
 $vnc_mock->redefine(login => sub { push @vnc_logins, [shift->hostname] });
-$vnc_mock->redefine($_    => sub { }) for (qw(_receive_message _send_frame_buffer send_update_request));
+$vnc_mock->redefine($_ => sub { }) for (qw(_receive_message _send_frame_buffer send_update_request));
+my $video_mock = Test::MockModule->new('consoles::video_stream');
+my @video_connects;
+$video_mock->redefine(connect_remote => sub { push @video_connects, [shift->{args}->{url}] });
+$video_mock->redefine($_ => sub { }) for (qw(update_framebuffer request_screen_update));
 my $bmwqemu_mock = Test::MockModule->new('bmwqemu');
 # silence some log output for cleaner tests
 $bmwqemu_mock->noop('diag');
@@ -68,15 +73,37 @@ subtest 'start VM' => sub {
     is_deeply($backend->do_start_vm, {}, 'return value');
     is_deeply(\@invoked_cmds, [
             [$cmd_ctl, 'poweroff'], [$cmd_ctl, 'flash', 'light', '/hdd', '5G'], [$cmd_ctl, 'poweroff'],
-            ['sleep',  3],          [$cmd_ctl, 'poweron'], 'start_serial_grab'
+            ['sleep', 3], [$cmd_ctl, 'poweron'], 'start_serial_grab'
     ], 'poweroff/on commands invoked') or diag explain \@invoked_cmds;
     is_deeply(\@vnc_logins, [['vnc.server']], 'tried to connect to VNC server') or diag explain \@vnc_logins;
 };
 
+subtest 'start VM with video' => sub {
+    # start the "VM" which should actually just run a few commands via IPC::Run and start the VNC and serial consoles
+    undef $bmwqemu::vars{GENERAL_HW_VNC_IP};
+    $bmwqemu::vars{GENERAL_HW_VIDEO_STREAM_URL} = 'udp://@:5004';
+    $bmwqemu::vars{GENERAL_HW_INPUT_CMD} = 'ctl input';
+    @invoked_cmds = ();
+    is_deeply($backend->do_start_vm, {}, 'return value');
+    is_deeply(\@invoked_cmds, [
+            [$cmd_ctl, 'poweroff'], [$cmd_ctl, 'flash', 'light', '/hdd', '5G'], [$cmd_ctl, 'poweroff'],
+            ['sleep', 3], [$cmd_ctl, 'poweron'], 'start_serial_grab'
+    ], 'poweroff/on commands invoked') or diag explain \@invoked_cmds;
+    is_deeply(\@video_connects, [['udp://@:5004']], 'tried to connect to video stream') or diag explain \@vnc_logins;
+};
+
+subtest 'hdd args' => sub {
+    # more complex disks setup
+    $bmwqemu::vars{NUMDISKS} = '2';
+    $bmwqemu::vars{HDD_2} = '/hdd2';
+    $bmwqemu::vars{HDDSIZEGB_2} = '10';
+    is_deeply($backend->compute_hdd_args, ['/hdd', '5G', '/hdd2', '10G'], 'return value');
+};
+
 subtest 'stop VM' => sub {
     @invoked_cmds = ();
-    is_deeply($backend->do_stop_vm, {},                       'return value');
-    is_deeply(\@invoked_cmds,       [[$cmd_ctl, 'poweroff']], 'poweroff/on commands invoked') or diag explain \@invoked_cmds;
+    is_deeply($backend->do_stop_vm, {}, 'return value');
+    is_deeply(\@invoked_cmds, [[$cmd_ctl, 'poweroff']], 'poweroff/on commands invoked') or diag explain \@invoked_cmds;
 };
 
 subtest 'error handling' => sub {
@@ -101,3 +128,7 @@ subtest 'error handling' => sub {
 };
 
 done_testing();
+
+END {
+    unlink 'serial0';
+}
