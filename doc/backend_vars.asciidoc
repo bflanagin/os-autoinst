@@ -28,6 +28,8 @@ SSH_CONNECT_RETRY;integer;5;Maximum retries to connect to SSH based console targ
 SSH_CONNECT_RETRY_INTERVAL;float;10;Interval in seconds between retries to connect to SSH based console targets. Related to SSH_CONNECT_RETRY
 VNC_STALL_THRESHOLD;integer;4;Time after which is VNC considered stalled
 VNC_TYPING_LIMIT;integer;30;Maximum number of keys per second
+VNC_CONNECT_TIMEOUT_LOCAL;integer;10;Timeout for local VNC connections in seconds
+VNC_CONNECT_TIMEOUT_REMOTE;integer;60;Timeout for remote VNC connections in seconds
 _CHKSEL_RATE_WAIT_TIME;integer;30;The amount of time isotovideo is going to wait for the VNC console to become responsive
 _CHKSEL_RATE_HITS;integer;15000;The amount of times, the select should return the same fileno during the _CHKSEL_RATE_WAIT_TIME seconds, to consider the VNC console unresponsive
 TIMEOUT_SCALE;integer;1;This scale parameter can be used based on performance of workers to prevent false positive timeouts based on differing worker performance.
@@ -35,11 +37,25 @@ PAUSE_AT;string;;Test module (name or fullname) to pause test execution at. To b
 PAUSE_ON_SCREEN_MISMATCH;boolean;0;Pause test execution on the next screen mismatch. Same notes as for `PAUSE_AT` apply.
 PAUSE_ON_NEXT_COMMAND;boolean;0;Pause test execution on the next test API command. Same notes as for `PAUSE_AT` apply.
 _QUIET_SCRIPT_CALLS;boolean;0;Add quiet flag to all the calls to script_run, script_output and validate_script_output. It will omit all the squares "wait_serial expected" on the Details view of the test case. This option might be useful for serial terminal tests.
+_WAIT_STILL_SCREEN_ON_HERE_DOC_INPUT;float;0;If this value is greater then 0, it is used by `wait_still_screen` before starting to write the script into the here document used in `testapi::script_output()` function (see: poo#60566). By default this depends on the backend.
 AUTOINST_URL_HOSTNAME;string;;hostname or IP address of host running the autoinst webserver endpoint, defaults to the local IP address within the qemu network for the qemu backend or the `WORKER_HOSTNAME` otherwise.
 UPLOAD_METER;boolean;0;Display curl progress meter in `upload_logs()` and `upload_assets()` test API functions.
-UPLOAD_MAX_MESSAGE_SIZE_GB;integer;20;Specifies the max. upload size in GiB for the test API functions `upload_logs()` and `upload_assets()` and the underlying command server API.
+UPLOAD_MAX_MESSAGE_SIZE_GB;integer;0;Specifies the max. upload size in GiB for the test API functions `upload_logs()` and `upload_assets()` and the underlying command server API. Zero denotes infinity.
 UPLOAD_INACTIVITY_TIMEOUT;integer;300;Specifies the inactivity timeout in seconds for the test API functions `upload_logs()` and `upload_assets()` and underlying the command server API.
+NO_DEPRECATE_BACKEND_$backend;boolean;0;Only warn about deprecated backends instead of aborting
+XRES;integer;1024;Resolution of display on x axis
+YRES;integer;768;Resolution of display on y axis
 
+|====================
+
+.ZVM backend
+[grid="rows",format="csv"]
+[options="header",cols="^m,^m,^m,v",separator=";"]
+|====================
+Variable;Values allowed;Default value;Explanation
+ZVM_HOST;string;;Sets the remote hostname.
+ZVM_GUEST;string;;Sets the remote username.
+ZVM_PASSWORD;string;;Sets the remote password.
 |====================
 
 .SSH backend
@@ -56,6 +72,7 @@ _SSH_SERVER_ALIVE_INTERVAL;integer;60;Sets a timeout interval in seconds after w
 [options="header",cols="^m,^m,^m,v",separator=";"]
 |====================
 Variable;Values allowed;Default value;Explanation
+HARDWARE_CONSOLE_LOG;boolean;undef;Enable direct log capture of sol console, disabled by default
 IPMI_HOSTNAME;string;undef;Hostname/IP for IPMI interface
 IPMI_PASSWORD;string;undef;Password for the IPMI interface
 IPMI_USER;string;undef;Username for the IPMI interface
@@ -69,7 +86,9 @@ IPMI_MC_RESET_SLEEP_TIME_S;integer;10;Time to sleep after sending mc reset comma
 IPMI_MC_RESET_TIMEOUT;integer;60;Counts to try to reach IPMI interface after mc reset
 IPMI_MC_RESET_PING_COUNT;integer;1;Ping counts that must be successful after mc reset
 IPMI_MC_RESET_IPMI_TRIES;integer;3;Maximum number of IPMI command tries that are conducted after mc reset
-IPMI_SOL_PERSISTENT_CONSOLE;boolean;0;Make SOL console persistent and don't reset it, disabled by default
+IPMI_SOL_PERSISTENT_CONSOLE;boolean;1;Make SOL console persistent and don't reset it, enabled by default
+IPMI_$_;;;Internal iterator variable
+WORKER_HOSTNAME;string;undef;Worker hostname
 |====================
 
 .QEMU backend
@@ -86,7 +105,6 @@ BOOT_MENU_TIMEOUT;integer;5000;boot menu timeout in ms. Needs BOOT_MENU
 BOOTFROM;chars;undef;Influences order of boot devices. See qemu -boot option
 CDMODEL;see qemu -device ?;undef;Storage device for virtualized CD
 DELAYED_START;boolean;;delay vm cpu start until resume_vm() is called
-HDDFORMAT;;;HDD format
 HDDMODEL;see qemu -device ?;virtio-blk;Storage device for virtualized HDD.
 HDDMODEL_$_;see qemu -device ?;virtio-blk;Storage device for virtualized HDD. Overrides global HDDMODEL for HDD_$i
 HDDSIZEGB;integer;10;Creates HDD with specified size in GiB
@@ -122,8 +140,10 @@ QEMUMACHINE;see qemu -machine ?;undef;Machine and chipset to emulate
 QEMUPORT;integer;20002 + worker instance * 10;Port on which QEMU monitor should listen
 QEMURAM;integer;1024;Size of RAM of VM in MiB
 QEMUTHREADS;integer;0;Number of cpu threads used by VM
-QEMUTPM;'instance' or appropriate value for local swtpm config;undef;Configure VM to use a TPM emulator device, with appropriate args for the arch. sysadmin is responsible for running swtpm with a socket at /tmp/mytpmX, where X is the value of QEMUTPM or the worker instance number if QEMUTPM is set to 'instance'
-QEMUVGA;see qemu -device ?;cirrus;VGA device to use with VM
+QEMUTPM;'instance' or appropriate value for local swtpm config;undef;Configure VM to use a TPM emulator device, with appropriate args for the arch. If a TPM device is available at QEMUTPM_PATH_PREFIX + X, where X is the value of QEMUTPM or the worker instance number if QEMUTPM is set to 'instance', it will be used. Otherwise it will be created at test startup. See QEMUTPM_VER in the latter case.
+QEMUTPM_VER;'1.2' or '2.0' depending on which TPM chip should be emulated;'2.0';If no TPM device has been setup otherwise, swtpm will be used internally to create one with a socket at /tmp/mytpmX
+QEMUTPM_PATH_PREFIX;string;'/tmp/mytpm';Path prefix to use or create TPM emulator device in
+QEMUVGA;see qemu -device ?;QEMU's default;VGA device to use with VM
 QEMU_COMPRESS_QCOW2;boolean;1;compress qcow2 images intended for upload
 QEMU_IMG_CREATE_TRIES;integer;3;Define number of tries for qemu-img commands
 QEMU_HUGE_PAGES_PATH;string;undef;Define a path to use huge pages (e.g. /dev/hugepages/)
@@ -132,7 +152,7 @@ QEMU_MAX_MIGRATION_TIME;integer;240;Maximum time in seconds a migration to file 
 QEMU_NO_FDC_SET;boolean;0;Don't disable the floppy drive.
 QEMU_NO_KVM;boolean;0;Don't use KVM acceleration.
 QEMU_NO_TABLET;boolean;0;Don't use USB tablet.
-QEMU_VIRTIO_RNG;boolean;0;Enable virtio random number generator
+QEMU_VIRTIO_RNG;boolean;1;Enable virtio random number generator
 QEMU_NUMA;boolean;0;Enable NUMA simulation, requires QEMUCPUS to be greater than one
 QEMU_SMBIOS;see qemu -smbios ?;undef;pass this value to qemu -smbios
 QEMU_SOUNDHW;see qemu -soundhw ?;had;pass this value to qemu -soundhw (for qemu < 4.2)
@@ -144,7 +164,7 @@ QEMU_NON_FATAL_DBUS_CALL;boolean;0;Ignore failed dbus calls and ignore instead o
 QEMU_MAX_BANDWIDTH;integer;INT_MAX;Limits the transfer rate during a snapshot.
 QEMU_DUMP_COMPRESS_METHOD;string;xz;The compression to use during a memory dump. Can be set to xz, bzip2 or internal (QEMU's internal compression, not compatible with crash or gdb). If xz is set, but not available, it will fallback to bzip2. Also see QEMU_COMPRESSION_LEVEL.
 QEMU_APPEND;string;;Append parameters on qemu command line. The first item will have '-' prepended to it.
-QEMU_ENABLE_SMBD;boolean;0;Enable QEMU's built-in samba service for user network. Exported worker's pool will be accessible on `\\10.0.2.4\qemu` share.
+QEMU_ENABLE_SMBD;boolean;0;Enable QEMU's built-in samba service for user network. Exported worker's pool will be accessible on `\\10.0.2.4\qemu` share. Requires `smbd` to be installed (usually part of the `samba` package).
 VIRTIO_CONSOLE;boolean;1;Enable/disable virtio console. (@see `-device virtconsole` qemu option)
 VIRTIO_CONSOLE_NUM;integer;1;Number of virtio consoles.
 QEMU_BALLOON_TARGET;integer;undef;The target guest RAM usage before a snapshot is taken. It is intended to speed up snapshots by forcing the guest to drop various caches. Setting this enables the virtio-balloon device which requires a kernel with a virtio-balloon driver. Setting this far below the RAM required by the guest will probably cause the guest to panic or deadlock. However it should be able to cope with it being set slightly below what is needed.
@@ -169,7 +189,8 @@ VDE_USE_SLIRP;integer;1;whether to start slirpvde
 VNC;integer;worker instance + 90;Display on which VNC server is running. Actual port is 5900 + VNC
 VNCKB;;;Set the keyboard layout if you are not using en-us
 WORKER_CLASS;string;undef;qemu system types
-WORKER_HOSTNAME;string;undef;Worker host name
+WORKER_HOSTNAME;string;undef;Worker hostname
+QEMU_VIDEO_DEVICE;string;virtio-gpu-pci;Video device to use for ARM architectures (can have options appended e.g. virtio-gpu-gl,edid=on)
 |====================
 
 .SVIRT backend
@@ -181,7 +202,8 @@ HDDSIZEGB;integer;15;Disk size in GB
 QEMUCPUS;integer;1;Number of CPUs to assign to VM
 QEMURAM;integer;1024;Size of RAM of VM in MiB
 VIRSH_HOSTNAME;string;;SSH Host with virsh
-VIRSH_PASSWORD;string;;Password for root account on above host
+VIRSH_USERNAME;string;;Username on above host, defaults to root
+VIRSH_PASSWORD;string;;Password for user account on above host
 VIRSH_VMM_FAMILY;string;;Host's hypervisor ('kvm', 'xen')
 VIRSH_VMM_TYPE;string;;Host's hypervisor type ('hvm' for full virtualization on 'kvm' and 'xen' families, 'linux' for paravirtualization on 'xen' family)
 VIRSH_GUEST;string;;Where to look for VNC server (SUT or VM)
@@ -202,6 +224,8 @@ HYPERV_SERIAL_PORT;integer;;TCP port where is VM's serial port stream to be expe
 HYPERV_VIRTUAL_SWITCH;string;;ExternalVirtualSwitch;Name of Hyper-V's External Virtual Switch
 NUMDISKS;integer;1;Number of disks
 RAIDLEVEL;integer;undef;Sets the raid level
+SVIRT_KEEP_VM_RUNNING;boolean;undef;Keep VM running after execution, disabled by default
+WORKER_HOSTNAME;string;undef;Worker hostname
 |====================
 
 .VAGRANT backend
@@ -253,15 +277,24 @@ WORKER_ID;string;undef;osauto id
 [options="header",cols="^m,^m,^m,v",separator=";"]
 |====================
 Variable;Values allowed;Default value;Explanation
-HMC_USERNAME;string;;Username for HMC
+HARDWARE_CONSOLE_LOG;boolean;undef;Enable direct log capture of mkvterm console, disabled by default
+HMC_MACHINE_NAME;string;;Sets the public name of the host
+HMC_HOSTNAME;string;;Sets the remote host to connect tp
+HMC_USERNAME;string;;Username for the remote host, defaults to hscroot
+HMC_PASSWORD;string;;Password for the remote host
+LPAR_ID;string;udef;LPAR id
 |====================
 
-.GENERAL_HW backend
+.GENERALHW backend
 [grid="rows",format="csv"]
 [options="header",cols="^m,^m,^m,v",separator=";"]
 |====================
 Variable;Values allowed;Default value;Explanation
 GENERAL_HW_VNC_IP;string;;Hostname of the gadget's network. If not set, SSH consoles will be used
+GENERAL_HW_VNC_PASSWORD;string;;Password for VNC server
+GENERAL_HW_VNC_PORT;integer;5900;VNC Port number
+GENERAL_HW_NO_SERIAL;boolean;;Don't use serial
+GENERAL_HW_VIDEO_STREAM_URL;string;;Video stream URL (in ffmpeg's syntax) to receive, for example 'udp://@:5004' or '/dev/video0'.
 GENERAL_HW_CMD_DIR;string;;Directory with allowed CMD scripts. Note: This variable should be set in the workers.ini file, otherwise it will be ignored by openQA.
 GENERAL_HW_SOL_CMD;string;;Shell Script to output serial output (in CMD_DIR)
 GENERAL_HW_SOL_ARGS;string;;Arguments to pass GENERAL_HW_SOL_CMD Shell script
@@ -271,6 +304,16 @@ GENERAL_HW_POWEROFF_CMD;string;;Shell Command to power off the SUT (in CMD_DIR)
 GENERAL_HW_POWEROFF_ARGS;string;;Arguments to pass GENERAL_HW_POWEROFF_CMD Shell script
 GENERAL_HW_FLASH_CMD;string;;Shell Command to flash a disk image on SUT (in CMD_DIR), optional
 GENERAL_HW_FLASH_ARGS;string;;Arguments to pass GENERAL_HW_FLASH_CMD Shell script
+GENERAL_HW_IMAGE_CMD;string;;Shell Command to extract disk image from SUT (in CMD_DIR), optional
+GENERAL_HW_IMAGE_ARGS;string;;Arguments to pass GENERAL_HW_IMAGE_CMD Shell script. The script will get also extra arguments: disk number and file path to save it into.
+GENERAL_HW_INPUT_CMD;string;;Shell Command to control keyboard/mouse of the SUT, should wait for keyboard events on its stdin (in syntax used in 'send_key'), or mouse events as 'mouse_move <x> <y>' or 'mouse_button <buttons-pressed-mask>'. This is used only if GENERAL_HW_VIDEO_STREAM_URL is set.
+GENERAL_HW_INPUT_ARGS;string;;Arguments to pass GENERAL_HW_INPUT_CMD Shell script
+GENERAL_HW_EDID;string;;EDID to be set on relevant /dev/video device (see 'GENERAL_HW_VIDEO_STREAM_URL'), used directly as an argument for 'v4l2-ctl --set-edit'. Example values: 'type=hdmi', 'file=/some/path'.
+HDDSIZEGB;integer;10;Creates HDD with specified size in GiB
+HDD_$i;filename;;Filename of HDD image to be used for machine.
+HDDSIZEGB_$i;integer;;Creates HDD with specified size in GiB for corresponding HDD
+NUMDISKS;integer;1;Number of disks attached to machine
+WORKER_HOSTNAME;string;undef;Worker hostname
 |====================
 
 .AMT backend
@@ -287,5 +330,18 @@ AMT_PASSWORD;string;;Password for admin AMT user on target host
 [options="header",cols="^m,^m,^m,v",separator=";"]
 |====================
 Variable;Values allowed;Default value;Explanation
-WORKER_HOSTNAME;string;undef;Worker host name
+WORKER_HOSTNAME;string;undef;Worker hostname
+|====================
+
+.SPVM backend
+[grid="rows",format="csv"]
+[options="header",cols="^m,^m,^m,v",separator=";"]
+|====================
+Variable;Values allowed;Default value;Explanation
+HARDWARE_CONSOLE_LOG;boolean;undef;Enable direct log capture of mkvterm console, disabled by default
+WORKER_HOSTNAME;string;undef;Worker hostname
+NOVALINK_HOSTNAME;string;undef;Novalink target host to connect to
+NOVALINK_USERNAME;string;root;Username to authenticate on Novalink host
+NOVALINK_PASSWORD;string;undef;Password to authenticate on Novalink host
+NOVALINK_LPAR_ID;string;undef;LPAR ID on the Novalink target to control
 |====================

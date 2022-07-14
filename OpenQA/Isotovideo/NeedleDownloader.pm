@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 package OpenQA::Isotovideo::NeedleDownloader;
-use Mojo::Base -base;
+use Mojo::Base -base, -signatures;
 
 use Mojo::UserAgent;
 use Mojo::URL;
-use Mojo::File;
+use Mojo::File qw(path);
 use File::stat;
 use Try::Tiny;
 use POSIX 'strftime';
@@ -14,11 +14,11 @@ use bmwqemu;
 use needle;
 
 has files_to_download => sub { [] };
-has openqa_url        => sub {
+has openqa_url => sub {
     # deduce the default openQA URL from OPENQA_URL/OPENQA_HOSTNAME
     # note: OPENQA_URL is sometimes just the hostname (eg. e212.suse.de) but might be a proper URL
     #       as well (eg. http://openqa1-opensuse).
-    my $url  = Mojo::URL->new($bmwqemu::vars{OPENQA_URL});
+    my $url = Mojo::URL->new($bmwqemu::vars{OPENQA_URL});
     my $host = $bmwqemu::vars{OPENQA_HOSTNAME};
 
     # determine host if not present in OPENQA_URL
@@ -52,15 +52,13 @@ has openqa_url        => sub {
 
     return $url;
 };
-has ua             => sub { Mojo::UserAgent->new };
+has ua => sub { Mojo::UserAgent->new };
 has download_limit => 150;
 
-sub _add_download {
-    my ($self, $needle, $extension, $path_param) = @_;
-
-    my $needle_name     = $needle->{name};
-    my $latest_update   = $needle->{t_updated};
-    my $needles_dir     = needle::needles_dir();
+sub _add_download ($self, $needle, $extension, $path_param) {
+    my $needle_name = $needle->{name};
+    my $latest_update = $needle->{t_updated};
+    my $needles_dir = needle::needles_dir();
     my $download_target = "$needles_dir/$needle_name.$extension";
 
     if (my $target_stat = stat($download_target)) {
@@ -75,14 +73,12 @@ sub _add_download {
 
     push(@{$self->files_to_download}, {
             target => $download_target,
-            url    => Mojo::URL->new($self->openqa_url . $needle->{$path_param}),
+            url => Mojo::URL->new($self->openqa_url . $needle->{$path_param}),
     });
 }
 
-sub _download_file {
-    my ($self, $download) = @_;
-
-    my $download_url    = $download->{url};
+sub _download_file ($self, $download) {
+    my $download_url = $download->{url};
     my $download_target = $download->{target};
     bmwqemu::diag("download new needle: $download_url => $download_target");
 
@@ -97,44 +93,37 @@ sub _download_file {
         }
     }
     catch {
-        bmwqemu::diag("internal error occurred when downloading $download_url: $_");
+        bmwqemu::fctinfo("internal error occurred when downloading $download_url: $_");
     };
 
     # store the file on disk
     return unless ($download_res);
     try {
         unlink($download_target);
-        Mojo::File->new($download_target)->spurt($download_res->body);
+        path($download_target)->spurt($download_res->body);
     }
     catch {
-        bmwqemu::diag("unable to store download under $download_target");
+        bmwqemu::diag("unable to store download under $download_target: $_");
     };
 }
 
 # adds downloads for the specified $new_needles if those are missing/outdated locally
-sub add_relevant_downloads {
-    my ($self, $new_needles) = @_;
-
-    my $download_limit  = $self->download_limit;
+sub add_relevant_downloads ($self, $new_needles) {
+    my $download_limit = $self->download_limit;
     my $added_downloads = $self->files_to_download;
     for my $needle (@$new_needles) {
         last if (scalar @$added_downloads >= $download_limit);
         $self->_add_download($needle, 'json', 'json_path');
-        $self->_add_download($needle, 'png',  'image_path');
+        $self->_add_download($needle, 'png', 'image_path');
     }
 }
 
 # downloads previously added downloads
-sub download {
-    my ($self) = @_;
-    $self->_download_file($_) for (@{$self->files_to_download});
-}
+sub download ($self) { $self->_download_file($_) for (@{$self->files_to_download}) }
 
 # downloads missing needles considering $new_needles
 # (see t/21-needle-downloader.t for an example of $new_needles)
-sub download_missing_needles {
-    my ($self, $new_needles) = @_;
-
+sub download_missing_needles ($self, $new_needles) {
     $self->add_relevant_downloads($new_needles);
     $self->download();
 }

@@ -3,32 +3,24 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 package backend::ipmi;
-
-use Mojo::Base -strict;
+use Mojo::Base 'backend::baseclass', -signatures;
 use autodie ':all';
-
-use base 'backend::baseclass';
-
 use Time::HiRes qw(sleep);
 use Time::Seconds;
-use testapi 'get_required_var';
 use IPC::Run ();
 require IPC::System::Simple;
 
-sub new {
-    my $class = shift;
-    get_required_var('WORKER_HOSTNAME');
+sub new ($class) {
+    $bmwqemu::vars{WORKER_HOSTNAME} or die 'Need variable WORKER_HOSTNAME';
     return $class->SUPER::new;
 }
 
-sub ipmi_cmdline {
-    my ($self) = @_;
-    get_required_var("IPMI_$_") foreach qw(HOSTNAME USER PASSWORD);
+sub ipmi_cmdline ($self) {
+    $bmwqemu::vars{"IPMI_$_"} or die 'Need variable IPMI_$_' foreach qw(HOSTNAME USER PASSWORD);
     return ('ipmitool', '-I', 'lanplus', '-H', $bmwqemu::vars{IPMI_HOSTNAME}, '-U', $bmwqemu::vars{IPMI_USER}, '-P', $bmwqemu::vars{IPMI_PASSWORD});
 }
 
-sub ipmitool {
-    my ($self, $cmd, %args) = @_;
+sub ipmitool ($self, $cmd, %args) {
     $args{tries} //= 1;
 
     my @cmd = $self->ipmi_cmdline();
@@ -56,15 +48,13 @@ sub ipmitool {
 }
 
 # DELL BMCs are touchy
-sub dell_sleep {
-    my ($self) = @_;
+sub dell_sleep ($self) {
     return unless ($bmwqemu::vars{IPMI_HW} || '') eq 'dell';
     sleep 4;
 }
 
-sub restart_host {
-    my ($self) = @_;
-    my $tries = 3;     # arbitrary selection of tries
+sub restart_host ($self) {
+    my $tries = 3;    # arbitrary selection of tries
 
     my $stdout = $self->ipmitool('chassis power status', tries => $tries);
     if ($stdout !~ m/is off/) {
@@ -87,9 +77,7 @@ sub restart_host {
     1;
 }
 
-sub do_start_vm {
-    my ($self) = @_;
-
+sub do_start_vm ($self, @) {
     # reset ipmi main board if switch on
     # We may need this IPMI_BACKEND_MC_RESET setting to tune differently
     # on different ipmi workers according to different ipmi machines' behavior.
@@ -100,42 +88,35 @@ sub do_start_vm {
     $self->get_mc_status;
     $self->restart_host unless $bmwqemu::vars{IPMI_DO_NOT_RESTART_HOST};
     $self->truncate_serial_file;
-    my $sol = $testapi::distri->add_console('sol', 'ipmi-xterm', {persistent => $bmwqemu::vars{IPMI_SOL_PERSISTENT_CONSOLE} // 0});
+    my $sol = $testapi::distri->add_console(
+        'sol', 'ipmi-xterm',
+        {
+            persistent => $bmwqemu::vars{IPMI_SOL_PERSISTENT_CONSOLE} // 1,
+            log => $bmwqemu::vars{HARDWARE_CONSOLE_LOG} // 0});
     $sol->backend($self);
     return {};
 }
 
-sub do_stop_vm {
-    my ($self) = @_;
-
+sub do_stop_vm ($self, @) {
     $self->ipmitool("chassis power off") unless $bmwqemu::vars{IPMI_DO_NOT_POWER_OFF};
     $self->deactivate_console({testapi_console => 'sol'}) if defined $testapi::distri->{consoles}->{sol};
     return {};
 }
 
-sub is_shutdown {
-    my ($self) = @_;
+sub is_shutdown ($self, @) {
     my $ret = $self->ipmitool('chassis power status', tries => 3);
     return $ret =~ m/is off/;
 }
 
-sub check_socket {
-    my ($self, $fh, $write) = @_;
+sub check_socket ($self, $fh, $write = undef) { $self->check_ssh_serial($fh) || $self->SUPER::check_socket($fh, $write) }
 
-    return $self->check_ssh_serial($fh) || $self->SUPER::check_socket($fh, $write);
-}
-
-sub get_mc_status {
-    my ($self) = @_;
-
+sub get_mc_status ($self) {
     $self->ipmitool("mc guid");
     $self->ipmitool("mc info");
     $self->ipmitool("mc selftest") unless $bmwqemu::vars{IPMI_SKIP_SELFTEST};
 }
 
-sub do_mc_reset {
-    my ($self) = @_;
-
+sub do_mc_reset ($self) {
     # deactivate sol console before doing mc reset because it breaks sol connection
     if (defined $testapi::distri->{consoles}->{sol}) {
         bmwqemu::diag("Before doing mc reset, sol console exists, so cleanup it");
@@ -152,19 +133,18 @@ sub do_mc_reset {
     my $max_tries = $bmwqemu::vars{IPMI_MC_RESET_MAX_TRIES} // 5;
     for (1 .. $max_tries) {
         eval { $self->ipmitool("mc reset cold"); };
-        if ($@) {
-            bmwqemu::diag("IPMI mc reset failure: $@");
+        if (my $E = $@) {
+            bmwqemu::diag("IPMI mc reset failure: $E");
         }
         else {
-            bmwqemu::diag("IPMI mc reset success!");
-            # wait some time until mc reset really sent to board
+            bmwqemu::diag('IPMI mc reset success, waiting some seconds before trying to connect again');
             sleep $bmwqemu::vars{IPMI_MC_RESET_SLEEP_TIME_S} // 10;
-            bmwqemu::diag("sleep ends, will do ping");
+            bmwqemu::diag('sleep period ends, probing connection with ping');
             # check until  mc reset is done and ipmi recovered
-            my $count      = 0;
-            my $timeout    = $bmwqemu::vars{IPMI_MC_RESET_TIMEOUT}    // ONE_MINUTE;
+            my $count = 0;
+            my $timeout = $bmwqemu::vars{IPMI_MC_RESET_TIMEOUT} // ONE_MINUTE;
             my $ping_count = $bmwqemu::vars{IPMI_MC_RESET_PING_COUNT} // 1;
-            my $ping_cmd   = "ping -c$ping_count '$bmwqemu::vars{IPMI_HOSTNAME}'";
+            my $ping_cmd = "ping -c$ping_count '$bmwqemu::vars{IPMI_HOSTNAME}'";
             my $ipmi_tries = $bmwqemu::vars{IPMI_MC_RESET_IPMI_TRIES} // 3;
             while ($count++ < $timeout) {
                 eval { system($ping_cmd); };
@@ -172,8 +152,7 @@ sub do_mc_reset {
                     # ping pass, check ipmitool function normally
                     eval { $self->ipmitool('chassis power status', tries => $ipmi_tries); };
                     if (!$@) {
-                        # ipmitool is recovered completely
-                        bmwqemu::diag("IPMI: ipmitool is recovered after mc reset!");
+                        bmwqemu::diag("IPMI: ipmitool is recovered after mc reset");
                         return;
                     }
                 }

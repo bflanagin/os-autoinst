@@ -5,16 +5,17 @@
 # wrapper around tinycv
 
 package cv;
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 use constant BPP => 3;
 use ExtUtils::testlib;
 
 use File::Basename;
+use Cwd qw(realpath);
 
-sub init {
+sub init () {
     use Config;
     my $vendorlib = $Config{installvendorlib};
-    my $libdir    = dirname(__FILE__);
+    my $libdir = realpath(dirname(__FILE__));
     # undef is substituted at install time, see CMakeLists.txt
     my $sysdir = undef;
     return if ($sysdir && $libdir eq $sysdir);

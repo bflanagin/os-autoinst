@@ -8,8 +8,8 @@
 # in that 2nd process runs the actual backend, derived from backend::baseclass
 
 package backend::driver;
+use Mojo::Base -base, -signatures;
 
-use Mojo::Base -strict;
 use autodie ':all';
 
 use Carp 'croak';
@@ -21,19 +21,19 @@ use Mojo::IOLoop::ReadWriteProcess 'process';
 use Mojo::IOLoop::ReadWriteProcess::Session 'session';
 use myjsonrpc;
 use signalblocker;
+use log qw(diag fctinfo);
 
-sub new {
-    my ($class, $name) = @_;
-    my $self = bless({class => $class}, $class);
+sub new ($class, $name) {
+    my $self = $class->SUPER::new({class => $class});
 
     require "backend/$name.pm";
-    $self->{backend}      = "backend::$name"->new();
+    $self->{backend} = "backend::$name"->new();
     $self->{backend_name} = $name;
 
     session->on(
         collected_orphan => sub {
             my ($session, $p) = @_;
-            bmwqemu::fctinfo("Driver backend collected unknown process with pid " . $p->pid . " and exit status: " . $p->exit_status);
+            fctinfo("Driver backend collected unknown process with pid " . $p->pid . " and exit status: " . $p->exit_status);
         });
 
     $self->start();
@@ -41,21 +41,19 @@ sub new {
     return $self;
 }
 
-sub start {
-    my ($self) = @_;
-
+sub start ($self) {
     open(my $STDOUTPARENT, '>&', *STDOUT);
     open(my $STDERRPARENT, '>&', *STDERR);
 
     my $backend_process = process(
-        sleeptime_during_kill       => .1,
+        sleeptime_during_kill => .1,
         total_sleeptime_during_kill => 30,
-        max_kill_attempts           => 1,
-        kill_sleeptime              => 0,
-        blocking_stop               => 1,
-        separate_err                => 0,
-        subreaper                   => 1,
-        code                        => sub {
+        max_kill_attempts => 1,
+        kill_sleeptime => 0,
+        blocking_stop => 1,
+        separate_err => 0,
+        subreaper => 1,
+        code => sub {
             my $process = shift;
             $0 = "$0: backend";
 
@@ -71,27 +69,24 @@ sub start {
             undef $signal_blocker;
 
             $self->{backend}->run(fileno($process->channel_in), fileno($process->channel_out));
-        })->start;
+        });
 
-    $backend_process->on(collected => sub { bmwqemu::diag("backend process exited: " . shift->exit_status) });
+    $backend_process->on(collected => sub { diag("backend process exited: " . shift->exit_status) });
+    $backend_process->start;
 
-    bmwqemu::diag("$$: channel_out " . fileno($backend_process->channel_out) . ', channel_in ' . fileno($backend_process->channel_in));
-    $self->{backend_pid}     = $backend_process->pid;
+    diag("$$: channel_out " . fileno($backend_process->channel_out) . ', channel_in ' . fileno($backend_process->channel_in));
+    $self->{backend_pid} = $backend_process->pid;
     $self->{backend_process} = $backend_process;
 }
 
-sub extract_assets {
-    my $self = shift;
-    $self->{backend}->do_extract_assets(@_);
-}
+sub extract_assets ($self, @args) { $self->{backend}->do_extract_assets(@args) }
 
-sub stop {
-    my ($self, $cmd) = @_;
+sub stop ($self) {
     return unless $self->{backend_process}->is_running;
 
-    $self->stop_backend()                        if $self->{backend_process}->channel_out;
+    $self->stop_backend() if $self->{backend_process}->channel_out;
     close($self->{backend_process}->channel_out) if $self->{backend_process}->channel_out;
-    close($self->{backend_process}->channel_in)  if $self->{backend_process}->channel_in;
+    close($self->{backend_process}->channel_in) if $self->{backend_process}->channel_in;
     $self->{backend_process}->channel_in(undef);
     $self->{backend_process}->channel_out(undef);
     $self->{backend_process}->stop;
@@ -99,8 +94,7 @@ sub stop {
 
 # new api
 
-sub start_vm {
-    my $self = shift;
+sub start_vm ($self) {
     my $json = to_json({backend => $self->{backend_name}});
     open(my $runf, ">", 'backend.run');
     print $runf "$json\n";
@@ -114,8 +108,7 @@ sub start_vm {
     return 1;
 }
 
-sub stop_backend {
-    my ($self) = @_;
+sub stop_backend ($self) {
     $self->_send_json({cmd => 'stop_vm'});
     # remove if still existent
     unlink('backend.run') if -e 'backend.run';
@@ -124,20 +117,14 @@ sub stop_backend {
 
 # new api end
 
-sub mouse_hide {
-    my ($self, $border_offset) = @_;
-    $border_offset ||= 0;
-
-    return $self->_send_json({cmd => 'mouse_hide', arguments => {border_offset => $border_offset}});
-}
+sub mouse_hide ($self, $border_offset = 0) { $self->_send_json({cmd => 'mouse_hide', arguments => {border_offset => $border_offset}}) }
 
 # virtual methods end
 
-sub _send_json {
-    my ($self, $cmd) = @_;
+sub _send_json ($self, $cmd) {
     croak "no backend running" unless $self->{backend_process}->channel_in;
     my $token = myjsonrpc::send_json($self->{backend_process}->channel_in, $cmd);
-    my $rsp   = myjsonrpc::read_json($self->{backend_process}->channel_out, $token);
+    my $rsp = myjsonrpc::read_json($self->{backend_process}->channel_out, $token);
 
     return $rsp->{rsp} if defined $rsp;
     # this might have been closed by signal handler

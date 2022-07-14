@@ -2,6 +2,7 @@
 
 use Test::Most;
 use Mojo::Base -strict, -signatures;
+use Test::Warnings ':report_warnings';
 
 use FindBin '$Bin';
 use lib "$Bin/../external/os-autoinst-common/lib";
@@ -9,7 +10,7 @@ use OpenQA::Test::TimeLimit '5';
 use Socket;
 # This is the library we want to avoid, but it is OK just for testing
 use Socket::MsgHdr;
-use POSIX;
+use POSIX ();
 
 use cv;
 
@@ -30,7 +31,7 @@ my $pid = fork || do {
     shutdown($ask, 2);
 
     my @cmsg = $msg->cmsghdr();
-    my $fd   = unpack('i', $cmsg[2]);
+    my $fd = unpack('i', $cmsg[2]);
 
     POSIX::write($fd, $msg->buf(), 4)
       || die "Failed to write echo to pipe: $!";

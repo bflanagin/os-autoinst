@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 package signalblocker;
-use Mojo::Base -base;
+use Mojo::Base -base, -signatures;
 
 use bmwqemu;
 use POSIX ':signal_h';
@@ -13,30 +13,24 @@ use POSIX ':signal_h';
 # handler would crash. We need to block those signals in those threads, so
 # that they get delivered only to those threads which can handle it.
 
-sub new {
-    my ($class, @args) = @_;
-
+sub new ($class, @args) {
     # block signals
-    bmwqemu::diag('Blocking SIGCHLD and SIGTERM');
     my %old_sig = %SIG;
     $SIG{TERM} = 'IGNORE';
-    $SIG{INT}  = 'IGNORE';
-    $SIG{HUP}  = 'IGNORE';
+    $SIG{INT} = 'IGNORE';
+    $SIG{HUP} = 'IGNORE';
     my $sigset = POSIX::SigSet->new(SIGCHLD, SIGTERM);
     die "Could not block SIGCHLD and SIGTERM\n" unless defined sigprocmask(SIG_BLOCK, $sigset, undef);
 
     # create the actual object holding the information to restore the previous state
     my $self = $class->SUPER::new(@args);
     $self->{_old_sig} = \%old_sig;
-    $self->{_sigset}  = $sigset;
+    $self->{_sigset} = $sigset;
     return $self;
 }
 
-sub DESTROY {
-    my ($self) = @_;
-
+sub DESTROY ($self) {
     # set back signal handling to default to be able to terminate properly
-    bmwqemu::diag('Unblocking SIGCHLD and SIGTERM');
     die "Could not unblock SIGCHLD and SIGTERM\n" unless defined sigprocmask(SIG_UNBLOCK, $self->{_sigset}, undef);
     %SIG = %{$self->{_old_sig}};
 }

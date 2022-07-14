@@ -36,7 +36,7 @@ Source0:        %{name}-%{version}.tar.xz
 # The following line is generated from dependencies.yaml
 %define build_requires %build_base_requires cmake ninja
 # The following line is generated from dependencies.yaml
-%define main_requires git-core perl(B::Deparse) perl(Carp) perl(Carp::Always) perl(Class::Accessor::Fast) perl(Config) perl(Cpanel::JSON::XS) perl(Crypt::DES) perl(Cwd) perl(Data::Dumper) perl(Digest::MD5) perl(DynaLoader) perl(English) perl(Errno) perl(Exception::Class) perl(Exporter) perl(ExtUtils::testlib) perl(Fcntl) perl(File::Basename) perl(File::Find) perl(File::Path) perl(File::Temp) perl(File::Touch) perl(File::Which) perl(File::chdir) perl(IO::Handle) perl(IO::Scalar) perl(IO::Select) perl(IO::Socket) perl(IO::Socket::INET) perl(IO::Socket::UNIX) perl(IPC::Open3) perl(IPC::Run::Debug) perl(IPC::System::Simple) perl(List::MoreUtils) perl(List::Util) perl(Mojo::IOLoop::ReadWriteProcess) >= 0.26 perl(Mojo::JSON) perl(Mojo::Log) perl(Mojo::URL) perl(Mojo::UserAgent) perl(Mojolicious) >= 8.42 perl(Mojolicious::Lite) perl(Net::DBus) perl(Net::IP) perl(Net::SNMP) perl(Net::SSH2) perl(POSIX) perl(Scalar::Util) perl(Socket) perl(Socket::MsgHdr) perl(Term::ANSIColor) perl(Thread::Queue) perl(Time::HiRes) perl(Time::Moment) perl(Time::Seconds) perl(Try::Tiny) perl(XML::LibXML) perl(XML::SemanticDiff) perl(autodie) perl(base) perl(constant) perl(integer) perl(strict) perl(version) perl(warnings) perl-base
+%define main_requires git-core perl(B::Deparse) perl(Carp) perl(Carp::Always) perl(Config) perl(Cpanel::JSON::XS) perl(Crypt::DES) perl(Cwd) perl(Data::Dumper) perl(Digest::MD5) perl(DynaLoader) perl(English) perl(Errno) perl(Exception::Class) perl(Exporter) perl(ExtUtils::testlib) perl(Fcntl) perl(File::Basename) perl(File::Find) perl(File::Path) perl(File::Temp) perl(File::Touch) perl(File::Which) perl(File::chdir) perl(IO::Handle) perl(IO::Scalar) perl(IO::Select) perl(IO::Socket) perl(IO::Socket::INET) perl(IO::Socket::UNIX) perl(IPC::Open3) perl(IPC::Run::Debug) perl(IPC::System::Simple) perl(List::MoreUtils) perl(List::Util) perl(Mojo::IOLoop::ReadWriteProcess) >= 0.26 perl(Mojo::JSON) perl(Mojo::Log) perl(Mojo::URL) perl(Mojo::UserAgent) perl(Mojolicious) >= 8.42 perl(Mojolicious::Lite) perl(Net::DBus) perl(Net::IP) perl(Net::SNMP) perl(Net::SSH2) perl(POSIX) perl(Scalar::Util) perl(Socket) perl(Socket::MsgHdr) perl(Term::ANSIColor) perl(Thread::Queue) perl(Time::HiRes) perl(Time::Moment) perl(Time::Seconds) perl(Try::Tiny) perl(XML::LibXML) perl(XML::SemanticDiff) perl(autodie) perl(base) perl(constant) perl(integer) perl(strict) perl(version) perl(warnings) perl-base
 # all requirements needed by the tests, do not require on this in the package
 # itself or any sub-packages
 # SLE is missing spell check requirements
@@ -74,25 +74,30 @@ Source0:        %{name}-%{version}.tar.xz
 %define python_style_requires %{nil}
 %endif
 # The following line is generated from dependencies.yaml
-%define test_base_requires %main_requires cpio perl(Benchmark) perl(Devel::Cover) perl(FindBin) perl(Pod::Coverage) perl(Test::Fatal) perl(Test::Mock::Time) perl(Test::MockModule) perl(Test::MockObject) perl(Test::MockRandom) perl(Test::Mojo) perl(Test::Most) perl(Test::Output) perl(Test::Pod) perl(Test::Strict) perl(Test::Warnings) >= 0.029 procps python3-setuptools qemu >= 4.0 qemu-tools qemu-x86
+%define test_base_requires %main_requires cpio icewm perl(Benchmark) perl(Devel::Cover) perl(FindBin) perl(Pod::Coverage) perl(Test::Fatal) perl(Test::Mock::Time) perl(Test::MockModule) perl(Test::MockObject) perl(Test::MockRandom) perl(Test::Mojo) perl(Test::Most) perl(Test::Output) perl(Test::Pod) perl(Test::Strict) perl(Test::Warnings) >= 0.029 procps python3-setuptools qemu >= 4.0 qemu-tools qemu-x86 xorg-x11-Xvnc xterm xterm-console
 # The following line is generated from dependencies.yaml
 %define test_version_only_requires perl(Mojo::IOLoop::ReadWriteProcess) >= 0.28
 # The following line is generated from dependencies.yaml
-%define test_requires %build_requires %spellcheck_requires %test_base_requires %yamllint_requires perl(Inline::Python) perl(YAML::PP)
+%define test_requires %build_requires %spellcheck_requires %test_base_requires %yamllint_requires perl(Inline::Python) perl(YAML::PP) python3-Pillow-tk
 # The following line is generated from dependencies.yaml
-%define devel_requires %python_style_requires %test_requires ShellCheck perl(Devel::Cover) perl(Devel::Cover::Report::Codecov) perl(Perl::Tidy)
+%define devel_requires %python_style_requires %test_requires ShellCheck perl(Code::TidyAll) perl(Devel::Cover) perl(Devel::Cover::Report::Codecov) perl(Perl::Tidy) perl(Template::Toolkit)
 %define s390_zvm_requires /usr/bin/xkbcomp /usr/bin/Xvnc x3270 icewm xterm xterm-console xdotool fonts-config mkfontdir mkfontscale
 BuildRequires:  %test_requires %test_version_only_requires
 Requires:       %main_requires
 Recommends:     tesseract-ocr
 Recommends:     dumponlyconsole %s390_zvm_requires
 Recommends:     qemu >= 4.0.0
-Recommends:     qemu-tools 
+Recommends:     qemu-tools
 # Optional dependency for Python test API support
 Recommends:     perl(Inline::Python)
+# Optional dependency for crop.py
+Recommends:     python3-Pillow-tk
+# Optional dependency for QEMU's built-in samba service (enabled via QEMU_ENABLE_SMBD=1)
+Recommends:     samba
 Requires(pre):  %{_bindir}/getent
 Requires(pre):  %{_sbindir}/useradd
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
+ExcludeArch:    %{ix86}
 
 %description
 The OS-autoinst project aims at providing a means to run fully
@@ -142,6 +147,15 @@ Requires:       qemu-tools
 Convenience package providing os-autoinst and qemu-x86 dependencies.
 %endif
 
+%package swtpm
+Summary:        Convenience package providing os-autoinst+swtpm
+Group:          Development/Tools/Other
+Requires:       os-autoinst
+Requires:       swtpm
+
+%description swtpm
+Convenience package providing os-autoinst and swtpm dependencies.
+
 %package s390-deps
 Summary:        Convenience package providing os-autoinst + s390 worker jumphost deps
 Group:          Development/Tools/Other
@@ -154,22 +168,26 @@ Convenience package providing os-autoinst + s390 worker jumphost dependencies.
 
 %prep
 %setup -q
-sed -e 's,/bin/env python,/bin/python3,' -i crop.py
-# Replace version number from git to what's reported by the package
-sed  -i 's/ my $thisversion = qx{git.*rev-parse HEAD}.*;/ my $thisversion = "%{version}";/' isotovideo
 
 # don't require qemu within OBS
 # and exclude known flaky tests in OBS check
 # https://progress.opensuse.org/issues/52652
 # 07-commands: https://progress.opensuse.org/issues/60755
-# 10-virtio_terminal: https://progress.opensuse.org/issues/94991
-for i in 07-commands 10-virtio_terminal 13-osutils 14-isotovideo 18-qemu-options 18-backend-qemu 99-full-stack; do
+# 29-backend-driver: https://progress.opensuse.org/issues/105061
+for i in 07-commands 13-osutils 14-isotovideo 18-qemu-options 18-backend-qemu 29-backend-driver 99-full-stack; do
     rm t/$i.t
 done
+# exclude unnecessary author tests
+rm xt/00-tidy.t
+# Remove test relying on a git working copy
+rm xt/30-make.t
 
 %build
 %define __builder ninja
-%cmake -DOS_AUTOINST_DOC_DIR:STRING="%{_docdir}/%{name}" -DSYSTEMD_SERVICE_DIR:STRING="%{_unitdir}"
+%cmake \
+    -DOS_AUTOINST_DOC_DIR:STRING="%{_docdir}/%{name}" \
+    -DOS_AUTOINST_VERSION:STRING="%{version}" \
+    -DSYSTEMD_SERVICE_DIR:STRING="%{_unitdir}"
 %cmake_build
 
 %install
@@ -191,7 +209,10 @@ export NO_BRP_STALE_LINK_ERROR=yes
 export CI=1
 # account for sporadic slowness in build environments
 # https://progress.opensuse.org/issues/89059
-export OPENQA_TEST_TIMEOUT_SCALE_CI=10
+export OPENQA_TEST_TIMEOUT_SCALE_CI=20
+# Enable verbose test output as we can not store test artifacts within package
+# build environments in case of needing to investigate failures
+export PROVE_ARGS="--timer -v"
 cd %{__builddir}
 %cmake_build check-pkg-build
 
@@ -222,6 +243,7 @@ cd %{__builddir}
 %{_prefix}/lib/os-autoinst/testapi.pm
 %{_prefix}/lib/os-autoinst/mmapi.pm
 %{_prefix}/lib/os-autoinst/lockapi.pm
+%{_prefix}/lib/os-autoinst/log.pm
 %{_prefix}/lib/os-autoinst/cv.pm
 %{_prefix}/lib/os-autoinst/ocr.pm
 %{_prefix}/lib/os-autoinst/needle.pm
@@ -247,6 +269,7 @@ cd %{__builddir}
 %files qemu-kvm
 %files qemu-x86
 %endif
+%files swtpm
 %files s390-deps
 
 %changelog

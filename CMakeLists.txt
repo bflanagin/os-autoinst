@@ -35,7 +35,6 @@ set(PERL_FILES
     consoles/ipmiSol.pm
     consoles/localXvnc.pm
     consoles/network_console.pm
-    consoles/remoteVnc.pm
     consoles/s3270.pm
     consoles/serial_screen.pm
     consoles/sshIucvconn.pm
@@ -47,11 +46,14 @@ set(PERL_FILES
     consoles/sshXtermIPMI.pm
     consoles/sshXtermVt.pm
     consoles/ttyConsole.pm
+    consoles/video_base.pm
+    consoles/video_stream.pm
     consoles/virtio_terminal.pm
     consoles/vnc_base.pm
     consoles/VNC.pm
     distribution.pm
     lockapi.pm
+    log.pm
     mmapi.pm
     myjsonrpc.pm
     needle.pm
@@ -63,6 +65,7 @@ set(PERL_FILES
     OpenQA/Isotovideo/Interface.pm
     OpenQA/Isotovideo/NeedleDownloader.pm
     OpenQA/Isotovideo/Utils.pm
+    OpenQA/NamedIOSelect.pm
     OpenQA/Qemu/BlockDevConf.pm
     OpenQA/Qemu/BlockDev.pm
     OpenQA/Qemu/ControllerConf.pm
@@ -144,6 +147,18 @@ add_custom_target(
 add_dependencies(symlinks videoencoder snd2png debugviewer tinycv)
 
 # create installable versions of isotovideo and cv.pm
+set(OS_AUTOINST_VERSION "" CACHE STRING "os-autoinst version to set for the installation")
+find_program(GIT_BIN git)
+if (OS_AUTOINST_VERSION)
+    set(OS_AUTOINST_VERSION_REPLACE "${OS_AUTOINST_VERSION}")
+elseif (GIT_BIN AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+    execute_process(COMMAND "${GIT_BIN}" rev-parse HEAD
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                    OUTPUT_VARIABLE OS_AUTOINST_VERSION_REPLACE)
+    string(REPLACE "\n" "" OS_AUTOINST_VERSION_REPLACE "${OS_AUTOINST_VERSION_REPLACE}")
+else ()
+    set(OS_AUTOINST_VERSION_REPLACE "unknown")
+endif ()
 add_custom_command(
     COMMENT "Make directory to store intermediate files for install target"
     COMMAND mkdir -p "${CMAKE_CURRENT_BINARY_DIR}/install-target"
@@ -153,6 +168,7 @@ add_custom_command(
     COMMENT "Make install version of isotovideo"
     COMMAND
         sed -e "\"s,\\$$installprefix = undef\;,\\$$installprefix = '${CMAKE_INSTALL_PREFIX}/${OS_AUTOINST_DATA_DIR}'\;,\""
+            -e "\"s,my \\$$thisversion = \\(.*\\);,my \\$$thisversion = '${OS_AUTOINST_VERSION_REPLACE}';,\""
         "${CMAKE_CURRENT_SOURCE_DIR}/isotovideo" > "${CMAKE_CURRENT_BINARY_DIR}/install-target/isotovideo"
     DEPENDS "isotovideo" "CMakeLists.txt" "${CMAKE_CURRENT_BINARY_DIR}/install-target"
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/install-target/isotovideo"

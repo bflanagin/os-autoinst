@@ -1,6 +1,9 @@
 #!/usr/bin/perl
 
 use Test::Most;
+use Mojo::Base -strict, -signatures;
+use Test::Warnings ':report_warnings';
+use Test::MockModule;
 use FindBin '$Bin';
 use lib "$Bin/../external/os-autoinst-common/lib";
 use OpenQA::Test::TimeLimit '20';
@@ -13,36 +16,38 @@ use Cwd 'abs_path';
 use Mojo::File qw(tempdir path);
 use Mojo::JSON qw(decode_json);
 use Mojo::Util qw(scope_guard);
-use OpenQA::Isotovideo::Utils qw(load_test_schedule handle_generated_assets);
+use OpenQA::Isotovideo::Utils qw(handle_generated_assets);
 use OpenQA::Isotovideo::CommandHandler;
 
-my $dir          = tempdir("/tmp/$FindBin::Script-XXXX");
+my $dir = tempdir("/tmp/$FindBin::Script-XXXX");
 my $toplevel_dir = abs_path(dirname(__FILE__) . '/..');
-my $data_dir     = "$toplevel_dir/t/data";
-my $pool_dir     = "$dir/pool";
+my $data_dir = "$toplevel_dir/t/data";
+my $pool_dir = "$dir/pool";
 chdir $dir;
 my $cleanup = scope_guard sub { chdir $Bin; undef $dir };
 mkdir $pool_dir;
 
-sub isotovideo {
-    my (%args) = @_;
+sub isotovideo (%args) {
     $args{default_opts} //= 'backend=null';
-    $args{opts}         //= '';
-    $args{exit_code}    //= 1;
-    my @cmd = ($^X, "$toplevel_dir/isotovideo", '-d', $args{default_opts}, split(' ', $args{opts}));
+    $args{opts} //= '';
+    $args{exit_code} //= 1;
+    chdir "$Bin/..";
+    my @cmd = ($^X, "$toplevel_dir/isotovideo", '--workdir', $pool_dir, '-d', $args{default_opts}, split(' ', $args{opts}));
+    chdir $pool_dir;
     note "Starting isotovideo with: @cmd";
-    my $output = qx(@cmd);
-    my $res    = $?;
-    return fail 'failed to execute isotovideo: ' . $!         if $res == -1;    # uncoverable statement
+    my $output = qx(cd $toplevel_dir && @cmd);
+    my $res = $?;
+    return fail 'failed to execute isotovideo: ' . $! if $res == -1;    # uncoverable statement
     return fail 'isotovideo died with signal ' . ($res & 127) if $res & 127;    # uncoverable statement
+    local $Test::Builder::Level = $Test::Builder::Level + 1;
     is $res >> 8, $args{exit_code}, 'isotovideo exit code';
     return $output;
 }
 
 subtest 'get the version number' => sub {
-    # Make sure we're in a folder we can't write to, no base_state.json should be created here
-    chdir('/');
-    combined_like { system $^X, "$toplevel_dir/isotovideo", '--version' } qr/Current version is.+\[interface v[0-9]+\]/, 'version printed';
+    chdir "$Bin/..";
+    combined_like { system $^X, "$toplevel_dir/isotovideo", '--workdir', $pool_dir, '--version' } qr/Current version is.+\[interface v[0-9]+\]/, 'version printed';
+    chdir $pool_dir;
     ok(!-e bmwqemu::STATE_FILE, 'no state file was written');
 };
 
@@ -68,9 +73,12 @@ EOV
 subtest 'isotovideo with custom git repo parameters specified' => sub {
     chdir($pool_dir);
     my $base_state = path(bmwqemu::STATE_FILE);
-    $base_state->remove       if -e $base_state;
+    $base_state->remove if -e $base_state;
     path('vars.json')->remove if -e 'vars.json';
     path('repo.git')->make_path;
+    # some git variables might be set if this test is
+    # run during a `git rebase -x 'make test'`
+    delete @ENV{qw(GIT_DIR GIT_REFLOG_ACTION GIT_WORK_TREE)};
     my $git_init_output = qx{git init -q --bare repo.git 2>&1};
     is($?, 0, 'initialized test repo') or diag explain $git_init_output;
     # Ensure the checkout folder does not exist so that git clone tries to
@@ -78,11 +86,11 @@ subtest 'isotovideo with custom git repo parameters specified' => sub {
     remove_tree('repo');
     my $log = combined_from { isotovideo(
             opts => "casedir=file://$pool_dir/repo.git#foo needles_dir=$data_dir _exit_after_schedule=1") };
-    like $log,   qr/Cloning into 'repo'/, 'repo picked up';
-    like $log,   qr{git URL.*/repo},      'git repository attempted to be cloned';
-    like $log,   qr/branch.*foo/,         'branch in git repository attempted to be checked out';
-    like $log,   qr/fatal:.*/,            'fatal Git error logged';
-    unlike $log, qr/No scripts/,          'execution of isotovideo aborted; no follow-up error about empty CASEDIR produced';
+    like $log, qr/Cloning into 'repo'/, 'repo picked up';
+    like $log, qr{git URL.*/repo}, 'git repository attempted to be cloned';
+    like $log, qr/branch.*foo/, 'branch in git repository attempted to be checked out';
+    like $log, qr/fatal:.*/, 'fatal Git error logged';
+    unlike $log, qr/No scripts/, 'execution of isotovideo aborted; no follow-up error about empty CASEDIR produced';
 
     subtest 'fatal error recorded for passing as reason' => sub {
         my $state = decode_json($base_state->slurp);
@@ -105,108 +113,132 @@ subtest 'productdir variable relative/absolute' => sub {
     unlink('vars.json') if -e 'vars.json';
     combined_like { isotovideo(
             opts => "casedir=$data_dir/tests _exit_after_schedule=1 productdir=$data_dir/tests") } qr/\d* scheduling.*shutdown/, 'schedule has been evaluated';
-    mkdir('product')                                                    unless -e 'product';
-    mkdir('product/foo')                                                unless -e 'product/foo';
+    mkdir('product') unless -e 'product';
+    mkdir('product/foo') unless -e 'product/foo';
     symlink("$data_dir/tests/main.pm", "$pool_dir/product/foo/main.pm") unless -e "$pool_dir/product/foo/main.pm";
     combined_like { isotovideo(opts => "casedir=$data_dir/tests _exit_after_schedule=1 productdir=product/foo") } qr/\d* scheduling.*shutdown/, 'schedule can still be found';
     unlink("$pool_dir/product/foo/main.pm");
-    mkdir("$data_dir/tests/product")                                      unless -e "$data_dir/tests/product";
+    mkdir("$data_dir/tests/product") unless -e "$data_dir/tests/product";
     symlink("$data_dir/tests/main.pm", "$data_dir/tests/product/main.pm") unless -e "$data_dir/tests/product/main.pm";
     # additionally testing correct schedule for our "integration tests" mode
     my $log = combined_from { isotovideo(opts => "casedir=$data_dir/tests _exit_after_schedule=1 productdir=product integration_tests=1") };
-    like $log,   qr/\d* scheduling.*shutdown/, 'schedule can still be found for productdir relative to casedir';
-    unlike $log, qr/assert_screen_fail_test/,  'assert screen test not scheduled';
+    like $log, qr/\d* scheduling.*shutdown/, 'schedule can still be found for productdir relative to casedir';
+    unlike $log, qr/assert_screen_fail_test/, 'assert screen test not scheduled';
 };
 
 subtest 'upload assets on demand even in failed jobs' => sub {
     chdir($pool_dir);
     path(bmwqemu::STATE_FILE)->remove if -e bmwqemu::STATE_FILE;
-    path('vars.json')->remove         if -e 'vars.json';
+    path('vars.json')->remove if -e 'vars.json';
     my $module = 'tests/failing_module';
-    my $log    = combined_from { isotovideo(
+    my $log = combined_from { isotovideo(
             opts => "casedir=$data_dir/tests schedule=$module force_publish_hdd_1=foo.qcow2 qemu_no_kvm=1 arch=i386 backend=qemu qemu=i386", exit_code => 0) };
     like $log, qr/scheduling failing_module $module\.pm/, 'module scheduled';
-    like $log, qr/qemu-img.*foo.qcow2/,                   'requested image is published even though the job failed';
+    like $log, qr/qemu-img.*foo.qcow2/, 'requested image is published even though the job failed';
     ok(-e $pool_dir . '/assets_public/foo.qcow2', 'published image exists');
-    ok(!-e $pool_dir . '/base_state.json',        'no fatal error recorded');
-};
-
-# mock backend/driver
-{
-    package FakeBackendDriver;
-    sub new {
-        my ($class, $name) = @_;
-        my $self = bless({class => $class}, $class);
-        require "backend/$name.pm";
-        $self->{backend} = "backend::$name"->new();
-        return $self;
-    }
-    sub extract_assets {
-        my $self = shift;
-        $self->{backend}->do_extract_assets(@_);
-    }
-}
-
-subtest 'upload the asset even in an incomplete job' => sub {
-    my $command_handler = OpenQA::Isotovideo::CommandHandler->new();
-    $bmwqemu::vars{BACKEND}             = 'qemu';
-    $bmwqemu::vars{NUMDISKS}            = 1;
-    $bmwqemu::vars{FORCE_PUBLISH_HDD_1} = 'force_publish_test.qcow2';
-    $bmwqemu::vars{PUBLISH_HDD_1}       = 'publish_test.qcow2';
-    $command_handler->test_completed(0);
-    $bmwqemu::backend = FakeBackendDriver->new('qemu');
-    my $return_code;
-    combined_like {
-        $return_code = handle_generated_assets($command_handler, 1)
-    } qr/Requested to force the publication/, 'forced publication of asset';
-    my $base_state = path(bmwqemu::STATE_FILE);
-    is $return_code, 0, 'The asset was uploaded successfully' or die $base_state->slurp;
-    my $force_publish_asset = $pool_dir . '/assets_public/force_publish_test.qcow2';
-    ok(-e $force_publish_asset,                             'test.qcow2 image exists');
-    ok(!-e $pool_dir . '/assets_public/publish_test.qcow2', 'the asset defined by PUBLISH_HDD_X would not be generated in an incomplete job');
-};
-
-subtest 'error handling when loading test schedule' => sub {
-    chdir($dir);
-    my $base_state = path(bmwqemu::STATE_FILE);
-    subtest 'no schedule at all' => sub {
-        $base_state->remove;
-        $bmwqemu::vars{CASEDIR} = $bmwqemu::vars{PRODUCTDIR} = $dir;
-        throws_ok { load_test_schedule } qr/'SCHEDULE' not set and/, 'error logged';
-        my $state = decode_json($base_state->slurp);
-        if (is(ref $state, 'HASH', 'state file contains object')) {
-            is($state->{component}, 'tests', 'state file contains component message');
-            like($state->{msg}, qr/unable to load main\.pm/, 'state file contains error message');
-        }
-    };
-    subtest 'unable to load test module' => sub {
-        $base_state->remove;
-        my $module = 'foo/bar';
-        $bmwqemu::vars{SCHEDULE} = $module;
-        combined_like { throws_ok {
-                load_test_schedule } qr/Can't locate $module\.pm/, 'error logged' } qr/error on $module\.pm: Can't locate $module\.pm/, 'debug message logged';
-        my $state = decode_json($base_state->slurp);
-        if (is(ref $state, 'HASH', 'state file contains object')) {
-            is($state->{component}, 'tests', 'state file contains component');
-            like($state->{msg}, qr/unable to load foo\/bar\.pm/, 'state file contains error message');
-        }
-    };
+    ok(!-e bmwqemu::STATE_FILE, 'no fatal error recorded') or die path(bmwqemu::STATE_FILE)->slurp;
 };
 
 subtest 'load test success when casedir and productdir are relative path' => sub {
     chdir($pool_dir);
     path(bmwqemu::STATE_FILE)->remove if -e bmwqemu::STATE_FILE;
-    path('vars.json')->remove         if -e 'vars.json';
-    mkdir('my_cases')                                                   unless -e 'my_cases';
-    symlink("$data_dir/tests/lib", 'my_cases/lib')                      unless -e 'my_cases/lib';
-    mkdir('my_cases/products')                                          unless -e 'my_cases/products';
-    mkdir('my_cases/products/foo')                                      unless -e 'my_cases/foo';
-    symlink("$data_dir/tests/tests", 'my_cases/tests')                  unless -e 'my_cases/tests';
+    path('vars.json')->remove if -e 'vars.json';
+    mkdir('my_cases') unless -e 'my_cases';
+    symlink("$data_dir/tests/lib", 'my_cases/lib') unless -e 'my_cases/lib';
+    mkdir('my_cases/products') unless -e 'my_cases/products';
+    mkdir('my_cases/products/foo') unless -e 'my_cases/foo';
+    symlink("$data_dir/tests/tests", 'my_cases/tests') unless -e 'my_cases/tests';
     symlink("$data_dir/tests/needles", 'my_cases/products/foo/needles') unless -e 'my_cases/products/foo/needles';
     my $module = 'tests/failing_module';
-    my $log    = combined_from { isotovideo(opts => "casedir=my_cases productdir=my_cases/products/foo schedule=$module", exit_code => 0) };
+    my $log = combined_from { isotovideo(opts => "casedir=my_cases productdir=my_cases/products/foo schedule=$module", exit_code => 0) };
     like $log, qr/scheduling failing_module/, 'schedule can still be found';
-    like $log, qr/\d* loaded 4 needles/,      'loaded needles successfully';
+    like $log, qr/\d* loaded 4 needles/, 'loaded needles successfully';
+};
+
+
+# mock backend/driver
+{
+    package FakeBackendDriver;
+    sub new ($class, $name) {
+        my $self = bless({class => $class}, $class);
+        require "backend/$name.pm";
+        $self->{backend} = "backend::$name"->new();
+        return $self;
+    }
+    sub extract_assets ($self, @args) { $self->{backend}->do_extract_assets(@args) }
+}
+
+subtest 'publish assets' => sub {
+    $bmwqemu::vars{BACKEND} = 'qemu';
+    $bmwqemu::vars{NUMDISKS} = 1;
+    $bmwqemu::backend = FakeBackendDriver->new('qemu');
+    my $publish_asset = $pool_dir . '/assets_public/publish_test.qcow2';
+
+    my $command_handler = OpenQA::Isotovideo::CommandHandler->new();
+    subtest publish => sub {
+        $bmwqemu::vars{PUBLISH_HDD_1} = 'publish_test.qcow2';
+        $command_handler->test_completed(1);
+        my $return_code;
+        my $out = combined_from { $return_code = handle_generated_assets($command_handler, 1) };
+        like $out, qr/convert.*publish_test.qcow2/, 'publication of asset';
+        is $return_code, 0, 'The asset was uploaded successfully' or die path(bmwqemu::STATE_FILE)->slurp;
+        ok(-e $publish_asset, 'test.qcow2 image exists');
+        unlink $publish_asset;
+    };
+
+    subtest 'upload the asset even in an incomplete job' => sub {
+        $bmwqemu::vars{FORCE_PUBLISH_HDD_1} = 'force_publish_test.qcow2';
+        $bmwqemu::vars{PUBLISH_HDD_1} = 'publish_test.qcow2';
+        $command_handler->test_completed(0);
+        my $return_code;
+        my $out = combined_from { $return_code = handle_generated_assets($command_handler, 1) };
+        like $out, qr/Requested to force the publication/, 'forced publication of asset';
+        is $return_code, 0, 'The asset was uploaded successfully' or die path(bmwqemu::STATE_FILE)->slurp;
+        my $force_publish_asset = $pool_dir . '/assets_public/force_publish_test.qcow2';
+        ok(-e $force_publish_asset, 'test.qcow2 image exists');
+        ok(!-e $pool_dir . '/assets_public/publish_test.qcow2', 'the asset defined by PUBLISH_HDD_X would not be generated in an incomplete job');
+        delete $bmwqemu::vars{FORCE_PUBLISH_HDD_1};
+    };
+
+    subtest 'unclean shutdown' => sub {
+        $bmwqemu::vars{PUBLISH_HDD_1} = 'publish_test.qcow2';
+        $command_handler->test_completed(1);
+        my $return_code;
+        my $out = combined_from { $return_code = handle_generated_assets($command_handler, 0) };
+        like $out, qr/unable to handle generated assets:/, 'correct output';
+        is $return_code, 1, 'Unsuccessful handle_generated_assets' or die path(bmwqemu::STATE_FILE)->slurp;
+        ok !-e $publish_asset, 'test.qcow2 does not exist';
+    };
+
+    subtest 'unsuccessful do_extract_assets' => sub {
+        my $mock = Test::MockModule->new('backend::qemu');
+        $mock->redefine(do_extract_assets => sub (@) { die "oops" });
+        $bmwqemu::vars{PUBLISH_HDD_1} = 'publish_test.qcow2';
+        $command_handler->test_completed(1);
+        my $return_code;
+        my $out = combined_from { $return_code = handle_generated_assets($command_handler, 1) };
+        like $out, qr/unable to extract assets: oops/, 'correct output';
+        is $return_code, 1, 'Unsuccessful handle_generated_assets' or die path(bmwqemu::STATE_FILE)->slurp;
+        ok !-e $publish_asset, 'test.qcow2 does not exist';
+    };
+
+    subtest 'UEFI & PUBLISH_PFLASH_VARS' => sub {
+        $bmwqemu::vars{PUBLISH_HDD_1} = 'publish_test.qcow2';
+        $bmwqemu::vars{UEFI} = 1;
+        $bmwqemu::vars{PUBLISH_PFLASH_VARS} = 'opensuse-15.3-x86_64-20220617-4-kde@uefi-uefi-vars.qcow2';
+        $bmwqemu::vars{UEFI_PFLASH_CODE} = '/usr/share/qemu/ovmf-x86_64-ms-code.bin';
+        $bmwqemu::vars{UEFI_PFLASH_VARS} = '/usr/share/qemu/ovmf-x86_64-ms-vars.bin';
+        my $mock = Test::MockModule->new('OpenQA::Qemu::Proc');
+        $mock->redefine(export_blockdev_images => sub ($self, $filter, $img_dir, $name, $qemu_compress_qcow) {
+                return 1;
+        });
+        $command_handler->test_completed(1);
+        my $return_code;
+        my $out = combined_from { $return_code = handle_generated_assets($command_handler, 1) };
+        like $out, qr/Extracting.*pflash-vars/, 'correct output';
+        is $return_code, 0, 'Successful handle_generated_assets' or die path(bmwqemu::STATE_FILE)->slurp;
+        ok !-e $publish_asset, 'test.qcow2 does not exist';
+    };
 };
 
 done_testing();

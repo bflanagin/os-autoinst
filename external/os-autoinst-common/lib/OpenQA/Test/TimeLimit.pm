@@ -12,8 +12,8 @@ sub import {
     # disable timeout if requested by ENV variable or running within debugger
     return if ($ENV{OPENQA_TEST_TIMEOUT_DISABLE} or $INC{'perl5db.pl'});
     $SCALE_FACTOR *= $ENV{OPENQA_TEST_TIMEOUT_SCALE_COVER} // 3 if Devel::Cover->can('report');
-    $SCALE_FACTOR *= $ENV{OPENQA_TEST_TIMEOUT_SCALE_CI}    // 2 if $ENV{CI};
-    $limit        *= $SCALE_FACTOR;
+    $SCALE_FACTOR *= $ENV{OPENQA_TEST_TIMEOUT_SCALE_CI} // 2 if $ENV{CI};
+    $limit *= $SCALE_FACTOR;
     $SIG{ALRM} = sub { BAIL_OUT "test '$0' exceeds runtime limit of '$limit' seconds\n" };
     alarm $limit;
 }
@@ -61,7 +61,7 @@ respectively.
 
 =head2 Alternatives considered
 
-* Just checking the runtime while not aborting the test – this idea has
+* Just checking the runtime while not aborting the test - this idea has
 not been followed as we want to prevent any external runners to run into
 timeout first which can cause less obvious results
 * https://metacpan.org/pod/Time::Limit - nice syntax that inspired me to

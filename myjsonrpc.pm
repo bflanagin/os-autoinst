@@ -3,20 +3,18 @@
 
 package myjsonrpc;
 
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 use Carp qw(cluck confess);
 use IO::Select;
 use Errno;
 use Mojo::JSON;    # booleans
 use Cpanel::JSON::XS ();
-use bmwqemu          ();
+use bmwqemu ();
 
-use constant DEBUG_JSON  => $ENV{PERL_MYJSONRPC_DEBUG} || 0;
+use constant DEBUG_JSON => $ENV{PERL_MYJSONRPC_DEBUG} || 0;
 use constant READ_BUFFER => $ENV{PERL_MYJSONRPC_BYTES} || 8000000;
 
-sub send_json {
-    my ($to_fd, $cmd) = @_;
-
+sub send_json ($to_fd, $cmd) {
     # allow regular expressions to be automatically converted into
     # strings, using the Regex::TO_JSON function as defined at the end
     # of this file.
@@ -39,11 +37,10 @@ sub send_json {
     }
     $json .= "\n";
 
+    confess 'myjsonprc: called on undefined file descriptor' unless defined $to_fd;
     my $wb = syswrite($to_fd, "$json");
     if (!$wb || $wb != length($json)) {
-        if (!DEBUG_JSON && $! =~ qr/Broken pipe/) {
-            die('myjsonrpc: remote end terminated connection, stopping');
-        }
+        die('myjsonrpc: remote end terminated connection, stopping') if !DEBUG_JSON && $! =~ qr/Broken pipe/;
         confess "syswrite failed: $!";
     }
     return $cmdcopy{json_cmd_token};
@@ -53,15 +50,11 @@ sub send_json {
 our $sockets;
 
 # utility function
-sub read_json {
-    my ($socket, $cmd_token, $multi) = @_;
-
+sub read_json ($socket, $cmd_token = undef, $multi = undef) {
     my $cjx = Cpanel::JSON::XS->new;
 
     my $fd = fileno($socket);
-    if (DEBUG_JSON) {
-        bmwqemu::diag("($$) read_json($fd)");
-    }
+    bmwqemu::diag("($$) read_json($fd)") if DEBUG_JSON;
     if (exists $sockets->{$fd}) {
         # start with the trailing text from previous call
         my $buffer = delete $sockets->{$fd};
@@ -90,9 +83,7 @@ sub read_json {
                 push @results, undef;
                 last;
             }
-            if ($cmd_token && ($hash->{json_cmd_token} || '') ne $cmd_token) {
-                confess "ERROR: the token does not match - questions and answers not in the right order";
-            }
+            confess "ERROR: the token does not match - questions and answers not in the right order" if $cmd_token && ($hash->{json_cmd_token} || '') ne $cmd_token; # uncoverable statement
             push @results, $hash;
             # parse all lines from buffer
             next if $multi;
@@ -104,19 +95,14 @@ sub read_json {
         }
 
         # wait for next read
-        my @res                = $s->can_read;
-        my $remaining_attempts = 5;
+        my @res = $s->can_read;
         while (!@res) {
             # throw an error except can_read has been interrupted
             my $error = $!;
-            confess "ERROR: unable to wait for JSON reply: $error\n"                                 unless $!{EINTR};
-            confess "ERROR: can_read's underlying system call has been interrupted too many times\n" unless $remaining_attempts;
-
+            confess "ERROR: unable to wait for JSON reply: $error\n" unless $!{EINTR};
             # try again if can_read's underlying system call has been interrupted as suggested by the perlipc documentation
             bmwqemu::diag("($$) read_json($fd): can_read's underlying system call has been interrupted, trying again\n") if DEBUG_JSON;
             @res = $s->can_read;
-            $remaining_attempts -= 1;
-            next;
         }
 
         my $qbuffer;
@@ -139,8 +125,7 @@ sub read_json {
 package
 Regexp;
 #>>> perltidy on
-sub TO_JSON {
-    my $regex = shift;
+sub TO_JSON ($regex) {
     $regex = "$regex";
     return $regex;
 }

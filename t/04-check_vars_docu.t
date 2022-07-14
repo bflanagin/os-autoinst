@@ -15,14 +15,19 @@ use autodie ':all';
 
 use constant {
     BACKEND_DIR => "$FindBin::Bin/../backend",
-    DOC_DIR     => "$FindBin::Bin/../doc",
+    DOC_DIR => "$FindBin::Bin/../doc",
 };
 use constant VARS_DOC => DOC_DIR . '/backend_vars.asciidoc';
 
 # array of ignored "backends"
 my @backend_blocklist = qw();
 # blocklist of vars per backend. These vars will be ignored during vars exploration
-my %var_blocklist = (QEMU => ['WORKER_ID', 'WORKER_INSTANCE'], VAGRANT => ['QEMUCPUS', 'QEMURAM']);
+my %var_blocklist = (
+    QEMU => ['WORKER_ID', 'WORKER_INSTANCE'],
+    VAGRANT => ['QEMUCPUS', 'QEMURAM'],
+    GENERALHW => ['HDD_1'],
+    SVIRT => ['JOBTOKEN'],
+);
 # in case we want to present backend under different name, place it here
 my %backend_renames = (BASECLASS => 'Common', IKVM => 'IPMI');
 
@@ -36,7 +41,7 @@ my $table_header = 'Variable;Values allowed;Default value;Explanation';
 
 sub say ($text) { print STDERR "$text\n" }
 
-sub read_doc() {
+sub read_doc () {
     # read and parse old vars doc
     my $docfh;
     open($docfh, '<', VARS_DOC);
@@ -56,7 +61,7 @@ sub read_doc() {
                 my ($var, $value, $default, $explanation) = $line =~ /^([^;]+);\s*([^;]*);\s*([^;]*);\s*(.*)$/;
                 next unless ($var);
                 $default = '' unless (defined $default);
-                $value   = '' unless (defined $value);
+                $value = '' unless (defined $value);
                 unless ($explanation) {
                     fail "still missing explanation for backend $backend variable $var";
                 }
@@ -67,7 +72,7 @@ sub read_doc() {
     close($docfh);
 }
 
-sub write_doc {
+sub write_doc () {
     my $docfh;
     open($docfh, '>', VARS_DOC . '.newvars');
     print $docfh <<EO_HEADER;
@@ -103,7 +108,7 @@ EO_BACKEND_FOOTER
     }
 }
 
-sub read_backend_pm {
+sub read_backend_pm {    # no:style:signatures
     my ($backend) = $_ =~ /^([^\.]+)\.pm/;
     return unless $backend;
     return if (grep { /$backend/i } @backend_blocklist);

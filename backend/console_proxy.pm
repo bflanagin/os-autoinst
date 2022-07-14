@@ -10,48 +10,41 @@
 
 package backend::console_proxy;
 
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 use feature 'say';
 
-sub new {
-    my ($class, $console) = @_;
-
+sub new ($class, $console) {
     my $self = bless({class => $class, console => $console}, $class);
-
     return $self;
 }
 
-sub DESTROY {
-    # nothing to destroy but avoid AUTOLOAD
-}
+# nothing to destroy but avoid AUTOLOAD
+sub DESTROY () { }
 
 # handles the attempt to invoke an undefined method on the proxy console object
 # using query_isotovideo() to invoke the method on the actual console object in
 # the right process
-sub AUTOLOAD {
-
+sub AUTOLOAD {    # no:style:signatures
     my $function = our $AUTOLOAD;
 
     $function =~ s,.*::,,;
 
     # allow symbolic references
     no strict 'refs';
-    *$AUTOLOAD = sub {
-        my $self         = shift;
-        my $args         = \@_;
+    *$AUTOLOAD = sub {    # no:style:signatures
+        my $self = shift;
+        my $args = \@_;
         my $wrapped_call = {
-            console   => $self->{console},
-            function  => $function,
-            args      => $args,
+            console => $self->{console},
+            function => $function,
+            args => $args,
             wantarray => wantarray,
         };
 
         bmwqemu::log_call(wrapped_call => $wrapped_call);
         my $wrapped_retval = autotest::query_isotovideo('backend_proxy_console_call', $wrapped_call);
+        die $wrapped_retval->{exception} if exists $wrapped_retval->{exception};
 
-        if (exists $wrapped_retval->{exception}) {
-            die $wrapped_retval->{exception};
-        }
         # get more screenshots from consoles, especially from x3270 on s390
         $autotest::current_test->take_screenshot;
 
@@ -61,6 +54,10 @@ sub AUTOLOAD {
         return wantarray ? @{$wrapped_retval->{result}} : $wrapped_retval->{result};
     };
 
+    # this is why we can't use a signature for this function, goto
+    # implicitly uses @_ and that triggers a warning in a function
+    # with a signature. We want to use goto to hide frames in stack
+    # traces (per @kraih)
     goto &$AUTOLOAD;
 }
 

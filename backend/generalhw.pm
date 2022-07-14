@@ -6,85 +6,84 @@
 
 package backend::generalhw;
 
-use Mojo::Base -strict;
+use Mojo::Base 'backend::baseclass', -signatures;
 use autodie ':all';
-
-use base 'backend::baseclass';
-
 use bmwqemu;
-use testapi qw(get_required_var get_var);
 use IPC::Run ();
 require IPC::System::Simple;
 use File::Basename 'basename';
+use Mojo::IOLoop::ReadWriteProcess::Session 'session';
 
-sub new {
-    my $class = shift;
+sub new ($class) {
     # required for the tests to access our HTTP port
-    get_required_var('WORKER_HOSTNAME');
+    defined $bmwqemu::vars{WORKER_HOSTNAME} or die 'Need variable WORKER_HOSTNAME';
     return $class->SUPER::new;
 }
 
-sub get_cmd {
-    my ($self, $cmd) = @_;
-
-    my $dir = get_required_var('GENERAL_HW_CMD_DIR');
+sub get_cmd ($self, $cmd) {
+    my $dir = $bmwqemu::vars{GENERAL_HW_CMD_DIR} or die 'Need variable GENERAL_HW_CMD_DIR';
     die 'GENERAL_HW_CMD_DIR is not pointing to a directory' unless -d $dir;
 
-    my %GENERAL_HW_ARG_VARIABLES_BY_CMD = ('GENERAL_HW_FLASH_CMD' => 'GENERAL_HW_FLASH_ARGS', 'GENERAL_HW_SOL_CMD' => 'GENERAL_HW_SOL_ARGS', 'GENERAL_HW_POWERON_CMD' => 'GENERAL_HW_POWERON_ARGS', 'GENERAL_HW_POWEROFF_CMD' => 'GENERAL_HW_POWEROFF_ARGS');
-    my $args = get_var($GENERAL_HW_ARG_VARIABLES_BY_CMD{$cmd}) if get_var($GENERAL_HW_ARG_VARIABLES_BY_CMD{$cmd});
+    my %GENERAL_HW_ARG_VARIABLES_BY_CMD = (
+        'GENERAL_HW_FLASH_CMD' => 'GENERAL_HW_FLASH_ARGS',
+        'GENERAL_HW_SOL_CMD' => 'GENERAL_HW_SOL_ARGS',
+        'GENERAL_HW_INPUT_CMD' => 'GENERAL_HW_INPUT_ARGS',
+        'GENERAL_HW_POWERON_CMD' => 'GENERAL_HW_POWERON_ARGS',
+        'GENERAL_HW_POWEROFF_CMD' => 'GENERAL_HW_POWEROFF_ARGS',
+        'GENERAL_HW_IMAGE_CMD' => 'GENERAL_HW_IMAGE_ARGS',
+    );
+    my $args = $bmwqemu::vars{$GENERAL_HW_ARG_VARIABLES_BY_CMD{$cmd}} if $bmwqemu::vars{$GENERAL_HW_ARG_VARIABLES_BY_CMD{$cmd}};
 
-    # Append HDD infos to flash script
-    if ($cmd eq 'GENERAL_HW_FLASH_CMD' and get_var('HDD_1')) {
-        my $numdisks = get_var('NUMDISKS') // 1;
-        for my $i (1 .. $numdisks) {
-            # Pass path of HDD
-            $args .= " " . get_required_var("HDD_$i");
-            # Pass size of HDD
-            my $size = get_var("HDDSIZEGB_$i");
-            $size //= get_var('HDDSIZEGB') // 10;
-            $args .= " $size" . 'G';
-        }
-    }
-
-    $cmd = get_required_var($cmd);
+    $cmd = $bmwqemu::vars{$cmd} or die "Need test variable '$cmd'";
     $cmd = "$dir/" . basename($cmd);
     $cmd .= " $args" if $args;
     return $cmd;
 }
 
-sub run_cmd {
-    my ($self, $cmd) = @_;
+sub run_cmd ($self, $cmd, @extra_args) {
     my @full_cmd = split / /, $self->get_cmd($cmd);
 
+    push @full_cmd, @extra_args;
+
     my ($stdin, $stdout, $stderr, $ret);
-    eval { $ret = IPC::Run::run([@full_cmd], \$stdin, \$stdout, \$stderr) };
-    die "Unable to run command '@full_cmd' (deduced from test variable $cmd): $@\n" if $@;
+
+    {
+        # Do not let the SIGCHLD handler of Mojo::IOLoop::ReadWriteProcess::Session steal the exit code from IPC::Run
+        local $SIG{CHLD};
+        eval { $ret = IPC::Run::run(\@full_cmd, \$stdin, \$stdout, \$stderr) };
+        die "Unable to run command '@full_cmd' (deduced from test variable $cmd): $@\n" if $@;
+    }
     chomp $stdout;
     chomp $stderr;
 
-    die "$cmd: $stderr" unless $ret;
-    bmwqemu::diag("IPMI: $stdout");
+    die "$cmd: stdout: $stdout, stderr: $stderr" unless $ret;
+    bmwqemu::diag("IPMI: stdout: $stdout, stderr: $stderr");
     return $stdout;
 }
 
-sub poweroff_host {
-    my ($self) = @_;
+sub poweroff_host ($self) {
     $self->run_cmd('GENERAL_HW_POWEROFF_CMD');
     return;
 }
 
-sub restart_host {
-    my ($self) = @_;
-
+sub restart_host ($self) {
     $self->poweroff_host;
     sleep(3);
     $self->run_cmd('GENERAL_HW_POWERON_CMD');
     return;
 }
 
-sub relogin_vnc {
-    my ($self) = @_;
+sub power ($self, $args) {
+    if ($args->{action} eq 'on') {
+        $self->run_cmd('GENERAL_HW_POWERON_CMD');
+    } elsif ($args->{action} eq 'off') {
+        $self->run_cmd('GENERAL_HW_POWEROFF_CMD');
+    } else {
+        $self->notimplemented;
+    }
+}
 
+sub relogin_vnc ($self) {
     if ($self->{vnc}) {
         close($self->{vnc}->socket);
         sleep(1);
@@ -94,9 +93,10 @@ sub relogin_vnc {
         'sut',
         'vnc-base',
         {
-            hostname        => get_required_var('GENERAL_HW_VNC_IP'),
-            port            => 5900,
-            depth           => 16,
+            hostname => $bmwqemu::vars{GENERAL_HW_VNC_IP} || die('Need variable GENERAL_HW_VNC_IP'),
+            port => $bmwqemu::vars{GENERAL_HW_VNC_PORT} // 5900,
+            password => $bmwqemu::vars{GENERAL_HW_VNC_PASSWORD},
+            depth => 16,
             connect_timeout => 50
         });
     $vnc->backend($self);
@@ -105,56 +105,97 @@ sub relogin_vnc {
     return 1;
 }
 
-sub do_start_vm {
-    my ($self) = @_;
+sub compute_hdd_args ($self) {
+    my @hdd_args;
 
+    if ($bmwqemu::vars{HDD_1}) {
+        my $numdisks = $bmwqemu::vars{NUMDISKS} // 1;
+        for my $i (1 .. $numdisks) {
+            # Pass path of HDD
+            push @hdd_args, $bmwqemu::vars{"HDD_$i"} or die 'Need variable HDD_$i';
+            # Pass size of HDD
+            my $size = $bmwqemu::vars{"HDDSIZEGB_$i"};
+            $size //= $bmwqemu::vars{HDDSIZEGB} // 10;
+            push @hdd_args, $size . 'G';
+        }
+    }
+    return \@hdd_args;
+}
+
+sub reconnect_video_stream ($self, @) {
+
+    my $input_cmd;
+    $input_cmd = $self->get_cmd('GENERAL_HW_INPUT_CMD') if ($bmwqemu::vars{GENERAL_HW_INPUT_CMD});
+    my $vnc = $testapi::distri->add_console(
+        'sut',
+        'video-stream',
+        {
+            url => $bmwqemu::vars{GENERAL_HW_VIDEO_STREAM_URL},
+            connect_timeout => 50,
+            input_cmd => $input_cmd,
+            edid => $bmwqemu::vars{GENERAL_HW_EDID},
+        });
+    $vnc->backend($self);
+    $self->select_console({testapi_console => 'sut'});
+
+    return 1;
+}
+
+sub do_start_vm ($self, @) {
     $self->truncate_serial_file;
-    if (get_var('GENERAL_HW_FLASH_CMD')) {
+    if ($bmwqemu::vars{GENERAL_HW_FLASH_CMD}) {
+        # Append HDD infos to flash script
+        my $hdd_args = $self->compute_hdd_args;
+
         $self->poweroff_host;    # Ensure system is off, before flashing
-        $self->run_cmd('GENERAL_HW_FLASH_CMD');
+        $self->run_cmd('GENERAL_HW_FLASH_CMD', @$hdd_args);
     }
     $self->restart_host;
-    $self->relogin_vnc       if (get_var('GENERAL_HW_VNC_IP'));
-    $self->start_serial_grab if (get_var('GENERAL_HW_VNC_IP') || get_var('GENERAL_HW_SOL_CMD'));
+    $self->relogin_vnc if ($bmwqemu::vars{GENERAL_HW_VNC_IP});
+    $self->reconnect_video_stream if ($bmwqemu::vars{GENERAL_HW_VIDEO_STREAM_URL});
+    $self->start_serial_grab if (($bmwqemu::vars{GENERAL_HW_VNC_IP} || $bmwqemu::vars{GENERAL_HW_SOL_CMD}) && !$bmwqemu::vars{GENERAL_HW_NO_SERIAL});
     return {};
 }
 
-sub do_stop_vm {
-    my ($self) = @_;
-
+sub do_stop_vm ($self, @) {
     $self->poweroff_host;
-    $self->stop_serial_grab() if (get_var('GENERAL_HW_VNC_IP') || get_var('GENERAL_HW_SOL_CMD'));
+    $self->stop_serial_grab() if (($bmwqemu::vars{GENERAL_HW_VNC_IP} || $bmwqemu::vars{GENERAL_HW_SOL_CMD}) && !$bmwqemu::vars{GENERAL_HW_NO_SERIAL});
+    $self->disable_consoles;
     return {};
 }
 
-sub check_socket {
-    my ($self, $fh, $write) = @_;
-
+sub check_socket ($self, $fh, $write = undef) {
     return $self->check_ssh_serial($fh) || $self->SUPER::check_socket($fh, $write);
 }
 
 # serial grab
 
-sub start_serial_grab {
-    my ($self) = @_;
-
+sub start_serial_grab ($self) {
     $self->{serialpid} = fork();
     return unless $self->{serialpid} == 0;
     setpgrp 0, 0;
-    open(my $serial, '>',  $self->{serialfile});
-    open(STDOUT,     ">&", $serial);
-    open(STDERR,     ">&", $serial);
+    open(my $serial, '>', $self->{serialfile});
+    open(STDOUT, ">&", $serial);
+    open(STDERR, ">&", $serial);
     exec($self->get_cmd('GENERAL_HW_SOL_CMD'));
     die "exec failed $!";
 }
 
-sub stop_serial_grab {
-    my ($self) = @_;
+sub stop_serial_grab ($self, @) {
     return unless $self->{serialpid};
     kill("-TERM", $self->{serialpid});
     return waitpid($self->{serialpid}, 0);
 }
 
 # serial grab end
+
+sub do_extract_assets ($self, $args) {
+    my $name = $args->{name};
+    my $img_dir = $args->{dir};
+    my $hdd_num = $args->{hdd_num} - 1;
+    die "extracting pflash vars not supported" if $args->{pflash_vars};
+
+    $self->run_cmd('GENERAL_HW_IMAGE_CMD', ($hdd_num, "$img_dir/$name"));
+}
 
 1;

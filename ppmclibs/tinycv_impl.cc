@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <sys/time.h>
+#include <byteswap.h>
 
 #include <algorithm> // std::min
 #include <vector>
@@ -315,6 +316,23 @@ private:
 #endif
 
 /*!
+ * \brief Returns the default thread count for create_opencv_threads().
+ *
+ * That is the number of threads we can safely spawn without running into limitations.
+ *
+ * \remarks
+ * - This should be generally at least one thread and we generally just use OpenCV's default.
+ * - To avoid running into TBB's soft limit which seems to be one thread less than the number
+ *   of physical CPU threads (see TBB function `calc_workers_soft_limit`) we also limit ourselves
+ *   to that. Otherwise we might run into a deadlock with "The number of workers is currently
+ *   limited to 7. The request for 8 workers is ignored.".
+ */
+int opencv_default_thread_count()
+{
+    return std::max(1, std::min(cv::getNumThreads(), cv::getNumberOfCPUs() - 1));
+}
+
+/*!
  * \brief Creates OpenCV's threads upfront.
  *
  * This allows one to take control over spawning these threads, e.g. to block signals. One can
@@ -326,18 +344,17 @@ private:
  *   framework (e.g. OpenMP or TBB) but that would mean multiple code paths depending on OpenCV's
  *   configuration.
  * - We can not simply invoke `parallel_for_(Range(0, arbitrary_high_number), [&] (const Range &) {}`
- *   because that would not guarantee that actually up to \a thread_count are kept busy at the same
- *   time and indeed does not work in practice for high \a thread_count values like 32. Hence we
+ *   because that would not guarantee that actually up to \a thread_count threads are kept busy at the
+ *   same time and indeed does not work in practice for high \a thread_count values like 32. Hence we
  *   keep the threads idling until the expected number of threads has been spawned.
  */
 void create_opencv_threads(int thread_count)
 {
-    // use the number of CPU cores as default \a thread_count
+    // ensure \a thread_count is initialized and set it explicitly in any case so the number of
+    // expected threads is fix
     if (thread_count < 0) {
-        thread_count = std::max(0, cv::getNumberOfCPUs());
+        thread_count = opencv_default_thread_count();
     }
-
-    // set the number of threads explicitly in any case so the number of expected threads is fix
     cv::setNumThreads(thread_count);
 
     // execute a parallel algorithm which ensures that \a thread_count are busy at the same time
@@ -458,6 +475,12 @@ void image_threshold(Image* a, int level)
     }
 }
 
+std::tuple<long, long, long> image_get_pixel(Image* a, long x, long y)
+{
+    const auto pixel = a->img.at<Vec3b>(y, x);
+    return std::make_tuple(pixel[0], pixel[1], pixel[2]);
+}
+
 std::vector<float> image_avgcolor(Image* s)
 {
     Scalar t = mean(s->img);
@@ -559,6 +582,10 @@ public:
 
     Vec3b read_cpixel(const unsigned char* data, size_t& offset);
     Vec3b read_pixel(const unsigned char* data, size_t& offset);
+    const Vec3b &get_colour(unsigned int index) const {
+        assert(index < 256);
+        return colourMap[index];
+    }
     void set_colour(unsigned int index, unsigned int red, unsigned int green,
         unsigned int blue)
     {
@@ -566,6 +593,12 @@ public:
         colourMap[index] = Vec3b(blue, green, red);
     }
 };
+
+std::tuple<long, long, long> image_get_vnc_color(VNCInfo* info, unsigned int index)
+{
+    const auto &color = info->get_colour(index);
+    return std::make_tuple(color[0], color[1], color[2]);
+}
 
 void image_set_vnc_color(VNCInfo* info, unsigned int index, unsigned int red,
     unsigned int green, unsigned int blue)
@@ -615,13 +648,10 @@ void image_map_raw_data_rgb555(Image* a, const unsigned char* data)
 static uint16_t read_u16(const unsigned char* data, size_t& offset,
     bool do_endian_conversion)
 {
-    uint16_t pixel;
+    uint16_t pixel = *(uint16_t*)(data + offset);
+    offset += 2;
     if (do_endian_conversion) {
-        pixel = data[offset++] * 256;
-        pixel += data[offset++];
-    } else {
-        pixel = data[offset++];
-        pixel += data[offset++] * 256;
+        pixel = bswap_16(pixel);
     }
     return pixel;
 }
@@ -636,17 +666,10 @@ Vec3b VNCInfo::read_pixel(const unsigned char* data, size_t& offset)
     if (bytes_per_pixel == 2) {
         pixel = read_u16(data, offset, do_endian_conversion);
     } else if (bytes_per_pixel == 4) {
+        pixel = *(uint32_t*)(data + offset);
+        offset += 4;
         if (do_endian_conversion) {
-            pixel = data[offset++];
-            pixel <<= 8;
-            pixel |= data[offset++];
-            pixel <<= 8;
-            pixel |= data[offset++];
-            pixel <<= 8;
-            pixel |= data[offset++];
-        } else {
-            pixel = *(uint32_t*)(data + offset);
-            offset += 4;
+            pixel = bswap_32(pixel);
         }
     } else if (bytes_per_pixel == 1) {
         pixel = data[offset++];

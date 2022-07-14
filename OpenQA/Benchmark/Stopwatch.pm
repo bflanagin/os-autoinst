@@ -1,6 +1,6 @@
 package OpenQA::Benchmark::Stopwatch;
 
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 
 our $VERSION = '0.05';
 use Time::HiRes;
@@ -55,12 +55,11 @@ Creates a new stopwatch.
 
 =cut
 
-sub new {
-    my $class = shift;
-    my $self  = {};
+sub new ($class) {
+    my $self = {};
 
     $self->{events} = [];
-    $self->{_time}  = sub { Time::HiRes::time() };
+    $self->{_time} = sub { Time::HiRes::time() };
     $self->{length} = 26;
 
     return bless $self, $class;
@@ -75,8 +74,7 @@ chain.
 
 =cut
 
-sub start {
-    my $self = shift;
+sub start ($self) {
     $self->{start} = $self->time;
     return $self;
 }
@@ -90,12 +88,9 @@ the summary.
 
 =cut
 
-sub lap {
-    my $self        = shift;
-    my $name        = shift;
-    my $time        = $self->time;
-    my $name_lenght = length $name;
-    $self->{length} = $name_lenght if $name_lenght > $self->{length};
+sub lap ($self, $name) {
+    my $time = $self->time;
+    $self->{length} = length $name // $self->{length};
     push @{$self->{events}}, {name => $name, time => $time};
     return $self;
 }
@@ -108,8 +103,7 @@ Stops the stopwatch. Returns a reference to the stopwatch so you can chain.
 
 =cut
 
-sub stop {
-    my $self = shift;
+sub stop ($self) {
     $self->{stop} = $self->time;
     return $self;
 }
@@ -124,9 +118,7 @@ for.
 
 =cut
 
-sub total_time {
-    my $self = shift;
-
+sub total_time ($self) {
     # Get the stop time or now if missing.
     my $stop = $self->{stop} || $self->time;
 
@@ -153,26 +145,25 @@ The final entry C<_stop_> is when the stop watch was stopped.
 
 =cut
 
-sub summary {
-    my $self          = shift;
-    my $out           = '';
+sub summary ($self) {
+    my $out = '';
     my $header_format = "%-$self->{length}.$self->{length}s %-11s %-15s %s\n";
     my $result_format = " %-$self->{length}.$self->{length}s %-11.3f %-15.3f %.3f%%\n";
-    my $prev_time     = $self->{start};
+    my $prev_time = $self->{start};
     push @{$self->{events}}, {name => '_stop_', time => $self->{stop}};
 
     $out .= sprintf $header_format, qw( NAME TIME CUMULATIVE PERCENTAGE);
 
     foreach my $event (@{$self->{events}}) {
 
-        my $duration   = $event->{time} - $prev_time;
+        my $duration = $event->{time} - $prev_time;
         my $cumulative = $event->{time} - $self->{start};
         my $percentage = ($duration / $self->total_time) * 100;
 
         $out .= sprintf $result_format,    #
-          $event->{name},                  #
-          $duration,                       #
-          $cumulative,                     #
+          $event->{name},    #
+          $duration,    #
+          $cumulative,    #
           $percentage;
 
         $prev_time = $event->{time};
@@ -214,12 +205,11 @@ The returned hashref will look like this:
 
 =cut
 
-sub as_data {
-    my $self = shift;
+sub as_data ($self) {
     my %data = ();
 
     $data{start_time} = $self->{start};
-    $data{stop_time}  = $self->{stop} || $self->time;
+    $data{stop_time} = $self->{stop} || $self->time;
     $data{total_time} = $data{stop_time} - $data{start_time};
 
     # Clone the events across and add the stop event.
@@ -229,16 +219,16 @@ sub as_data {
 
     # For each entry in laps calculate the cumulative and the fraction.
     my $running_total = 0;
-    my $last_time     = $data{start_time};
+    my $last_time = $data{start_time};
     foreach my $lap (@laps) {
-        my %lapcopy   = %$lap;
+        my %lapcopy = %$lap;
         my $this_time = delete $lapcopy{time};
         $lapcopy{time} = $this_time - $last_time;
         $last_time = $this_time;
 
         $running_total += $lapcopy{time};
         $lapcopy{cumulative} = $running_total;
-        $lapcopy{fraction}   = $lapcopy{time} / $data{total_time};
+        $lapcopy{fraction} = $lapcopy{time} / $data{total_time} if $data{total_time};
 
         push @{$data{laps}}, \%lapcopy;
     }
@@ -246,9 +236,7 @@ sub as_data {
     return \%data;
 }
 
-sub time {
-    &{$_[0]{_time}};
-}
+sub time ($self) { $self->{_time}->() }
 
 =head1 AUTHOR
 

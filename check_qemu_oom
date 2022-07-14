@@ -13,11 +13,21 @@ check_qemu_oom qemu_pid
 
 =cut
 
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
+use Getopt::Long;
 
-my $qemu_pid = $ARGV[0];
+Getopt::Long::Configure("no_ignore_case");
 
-eval { use Pod::Usage; pod2usage(1); } unless $qemu_pid;
+my %options;
 
-exit 0 if (index(qx{dmesg}, "Out of memory: Killed process $qemu_pid") != -1);
-exit 1;
+sub usage ($r) {
+    eval { require Pod::Usage; Pod::Usage::pod2usage($r) };
+    die "cannot display help, install perl(Pod::Usage)\n" if $@;
+}
+
+GetOptions(\%options, 'help|h|?') or usage(1);
+usage(0) if $options{help};
+usage(1) unless @ARGV;
+my $qemu_pid = $ARGV[0] or usage(1);
+
+exit(index(qx{dmesg} // '', "Out of memory: Killed process $qemu_pid") != -1 ? 0 : 1);

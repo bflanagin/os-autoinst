@@ -3,20 +3,14 @@
 
 package backend::virt;
 
-use Mojo::Base -strict;
-
-use base 'backend::baseclass';
-
-use testapi 'get_var';
+use Mojo::Base 'backend::baseclass', -signatures;
 use bmwqemu;
 
-sub new {
-    my ($class) = @_;
+sub new ($class) {
     my $self = $class->SUPER::new;
-    $bmwqemu::vars{QEMURAM}  //= 1024;
+    $bmwqemu::vars{QEMURAM} //= 1024;
     $bmwqemu::vars{QEMUCPUS} //= 1;
     return $self;
 }
-
 
 1;

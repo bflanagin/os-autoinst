@@ -7,7 +7,6 @@
 requires 'B::Deparse';
 requires 'Carp';
 requires 'Carp::Always';
-requires 'Class::Accessor::Fast';
 requires 'Config';
 requires 'Cpanel::JSON::XS';
 requires 'Crypt::DES';
@@ -97,9 +96,11 @@ on 'test' => sub {
 };
 
 on 'devel' => sub {
+    requires 'Code::TidyAll';
     requires 'Devel::Cover';
     requires 'Devel::Cover::Report::Codecov';
-    requires 'Perl::Tidy', '== 20210717';
+    requires 'Perl::Tidy', '== 20220613';
+    requires 'Template::Toolkit';
 
 };
 

@@ -3,18 +3,17 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 package distribution;
-use Mojo::Base -strict;
+use Mojo::Base -strict, -signatures;
 
 use testapi ();
 use Carp 'croak';
 
-sub new {
-    my ($class) = @_;
-
+sub new ($class, @) {
     my $self = bless {}, $class;
-    $self->{consoles}          = {};
-    $self->{serial_failures}   = [];
+    $self->{consoles} = {};
+    $self->{serial_failures} = [];
     $self->{autoinst_failures} = [];
+    $self->{script_run_die_on_timeout} = -1;
 
 =head2 serial_term_prompt
 
@@ -31,30 +30,28 @@ prompt in \Q and \E anyway otherwise the whitespace will be ignored.
     return $self;
 }
 
-sub init {
-    # no cmds on default distri
-}
+# no cmds on default distri
+sub init ($self) { }
 
-sub add_console {
-    my ($self, $testapi_console, $backend_console, $backend_args) = @_;
-
+sub add_console ($self, $testapi_console, $backend_console, $backend_args = undef) {
     my %class_names = (
-        'tty-console'       => 'ttyConsole',
-        'ssh-serial'        => 'sshSerial',
-        'ssh-xterm'         => 'sshXtermVt',
-        'ssh-virtsh'        => 'sshVirtsh',
+        'tty-console' => 'ttyConsole',
+        'ssh-serial' => 'sshSerial',
+        'ssh-xterm' => 'sshXtermVt',
+        'ssh-virtsh' => 'sshVirtsh',
         'ssh-virtsh-serial' => 'sshVirtshSUT',
-        'vnc-base'          => 'vnc_base',
-        'local-Xvnc'        => 'localXvnc',
-        'ssh-iucvconn'      => 'sshIucvconn',
-        'virtio-terminal'   => 'virtio_terminal',
-        'amt-sol'           => 'amtSol',
-        'ipmi-sol'          => 'ipmiSol',
-        'ipmi-xterm'        => 'sshXtermIPMI',
+        'vnc-base' => 'vnc_base',
+        'local-Xvnc' => 'localXvnc',
+        'ssh-iucvconn' => 'sshIucvconn',
+        'virtio-terminal' => 'virtio_terminal',
+        'amt-sol' => 'amtSol',
+        'ipmi-sol' => 'ipmiSol',
+        'ipmi-xterm' => 'sshXtermIPMI',
+        'video-stream' => 'video_stream',
     );
     my $required_type = $class_names{$backend_console} || $backend_console;
-    my $location      = "consoles/$required_type.pm";
-    my $class         = "consoles::$required_type";
+    my $location = "consoles/$required_type.pm";
+    my $class = "consoles::$required_type";
 
     require $location;
 
@@ -64,13 +61,11 @@ sub add_console {
     return $ret;
 }
 
-sub x11_start_program {
-    die "TODO: implement x11_start_program for your distri " . testapi::get_var('DISTRI');
+sub x11_start_program (@) {
+    die "TODO: implement x11_start_program for your distri " . testapi::get_var('DISTRI', '');
 }
 
-sub ensure_installed {
-    my ($self, @pkglist) = @_;
-
+sub ensure_installed ($self, @pkglist) {
     if (testapi::check_var('DISTRI', 'debian')) {
         testapi::x11_start_program("su -c 'aptitude -y install @pkglist'", 4, {terminal => 1});
     }
@@ -84,9 +79,7 @@ sub ensure_installed {
     wait_still_screen(7, 90);    # wait for install
 }
 
-sub become_root {
-    my ($self) = @_;
-
+sub become_root ($self) {
     testapi::script_sudo("bash", 0);    # become root
     testapi::script_run('test $(id -u) -eq 0 && echo "imroot" > /dev/' . $testapi::serialdev, 0);
     testapi::wait_serial("imroot", 5) || die "Root prompt not there";
@@ -116,14 +109,13 @@ to return.
 
 =cut
 
-sub script_run {
-    my ($self, $cmd) = splice(@_, 0, 2);
+sub script_run ($self, $cmd, @args) {
     my %args = testapi::compat_args(
         {
             timeout => $bmwqemu::default_timeout,
-            output  => '',
-            quiet   => undef
-        }, ['timeout'], @_);
+            output => '',
+            quiet => undef
+        }, ['timeout'], @args);
 
     if (testapi::is_serial_terminal) {
         testapi::wait_serial($self->{serial_term_prompt}, no_regex => 1, quiet => $args{quiet});
@@ -132,7 +124,7 @@ sub script_run {
     if ($args{timeout} > 0) {
         die "Terminator '&' found in script_run call. script_run can not check script success. Use 'background_script_run' instead."
           if $cmd =~ qr/(?<!\\)&$/;
-        my $str    = testapi::hashed_string("SR" . $cmd . $args{timeout});
+        my $str = testapi::hashed_string("SR" . $cmd . $args{timeout});
         my $marker = "; echo $str-\$?-" . ($args{output} ? "Comment: $args{output}" : '');
         if (testapi::is_serial_terminal) {
             testapi::type_string($marker);
@@ -167,16 +159,14 @@ Use C<quiet> to avoid recording serial_results.
 
 =cut
 
-sub background_script_run {
-    my ($self, $cmd, %args) = @_;
-
+sub background_script_run ($self, $cmd, %args) {
     if (testapi::is_serial_terminal) {
         testapi::wait_serial($self->{serial_term_prompt}, no_regex => 1, quiet => $args{quiet});
     }
 
     $cmd = "( $cmd )";
     testapi::type_string $cmd;
-    my $str    = testapi::hashed_string("SR" . $cmd);
+    my $str = testapi::hashed_string("SR" . $cmd);
     my $marker = "& echo $str-\$!-" . ($args{output} ? "Comment: $args{output}" : '');
     if (testapi::is_serial_terminal) {
         testapi::type_string($marker);
@@ -201,14 +191,10 @@ $wait_seconds
 
 =cut
 
-sub script_sudo {
-    my ($self, $prog, $wait) = @_;
-
-    $wait //= 10;
-
+sub script_sudo ($self, $prog, $wait = 10) {
     my $str;
     if ($wait > 0) {
-        $str  = testapi::hashed_string("SS$prog$wait");
+        $str = testapi::hashed_string("SS$prog$wait");
         $prog = "$prog; echo $str > /dev/$testapi::serialdev";
     }
     testapi::type_string "sudo $prog\n";
@@ -242,19 +228,18 @@ You may be able to avoid overriding this function by setting
 $serial_term_prompt.
 
 =cut
-sub script_output {
-    my ($self, $script) = splice(@_, 0, 2);
+sub script_output ($self, $script, @args) {
     my %args = testapi::compat_args(
         {
-            timeout            => undef,
-            proceed_on_failure => 0,       # fail on error by default
-            quiet              => undef,
+            timeout => undef,
+            proceed_on_failure => 0,    # fail on error by default
+            quiet => undef,
             # 80 is approximate quantity of chars typed during 'curl' approach
             # if script length is lower there is no point to proceed with more complex solution
             type_command => length($script) < 80,
-        }, ['timeout'], @_);
+        }, ['timeout'], @args);
 
-    my $marker      = testapi::hashed_string("SO$script");
+    my $marker = testapi::hashed_string("SO$script");
     my $script_path = "/tmp/script$marker.sh";
 
     # prevent use of network for offline installations
@@ -265,7 +250,7 @@ sub script_output {
 
     if (testapi::is_serial_terminal) {
         my $heretag = 'EOT_' . $marker;
-        my $cat     = "cat > $script_path << '$heretag'; echo $marker-\$?-";
+        my $cat = "cat > $script_path << '$heretag'; echo $marker-\$?-";
         testapi::wait_serial($self->{serial_term_prompt}, no_regex => 1, quiet => $args{quiet});
         bmwqemu::log_call("Content of $script_path :\n \"$cat\" \n");
         testapi::type_string($cat . "\n");
@@ -279,9 +264,10 @@ sub script_output {
         testapi::wait_serial("$marker-0-", quiet => $args{quiet});
     }
     elsif ($args{type_command}) {
-        my $cat = "cat - > $script_path;\n";
+        my $cat = "cat - > $script_path;";
         testapi::type_string($cat);
-        testapi::type_string($script . "\n");
+        testapi::type_string("\n", wait_still_screen => testapi::backend_get_wait_still_screen_on_here_doc_input());
+        testapi::type_string($script . "\n", timeout => $args{timeout});
         testapi::send_key('ctrl-d');
     }
     else {
@@ -296,7 +282,7 @@ sub script_output {
     # unambiguously separate the expected output from other content that we
     # might encounter on the serial device depending on how it is used in the
     # SUT
-    my $shell_cmd  = testapi::is_serial_terminal() ? 'bash -oe pipefail' : 'bash -eox pipefail';
+    my $shell_cmd = testapi::is_serial_terminal() ? 'bash -oe pipefail' : 'bash -eox pipefail';
     my $run_script = "echo $marker; $shell_cmd $script_path ; echo SCRIPT_FINISHED$marker-\$?-";
     if (testapi::is_serial_terminal) {
         testapi::wait_serial($self->{serial_term_prompt}, no_regex => 1, quiet => $args{quiet});
@@ -342,9 +328,7 @@ Example:
     );
 
 =cut
-sub set_expected_serial_failures {
-    my ($self, $failures) = @_;
-
+sub set_expected_serial_failures ($self, $failures) {
     $self->{serial_failures} = $failures;
 }
 
@@ -364,20 +348,14 @@ Example:
     );
 
 =cut
-sub set_expected_autoinst_failures {
-    my ($self, $failures) = @_;
-
+sub set_expected_autoinst_failures ($self, $failures) {
     $self->{autoinst_failures} = $failures;
 }
 
 # override
-sub activate_console {
-    my ($self, $console) = @_;
-}
+sub activate_console ($self, $console) { }
 
 # override
-sub console_selected {
-    my ($self, $console) = @_;
-}
+sub console_selected ($self, $console) { }
 
 1;

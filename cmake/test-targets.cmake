@@ -42,13 +42,6 @@ else ()
     message(STATUS "Set BLACK_PATH to the path of the black executable to enable python style checks.")
 endif ()
 
-# add tidy check
-add_test(
-    NAME test-local-tidy
-    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/tidy" --check
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-)
-
 find_program(SHELLCHECK_PATH shellcheck)
 if (SHELLCHECK_PATH)
     add_test(
@@ -128,6 +121,7 @@ if (COVER_PATH AND PROVE_PATH)
         COMMAND "${COVER_PATH}" -report html_basic "${CMAKE_CURRENT_BINARY_DIR}/cover_db"
         DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/cover_db"
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coverage.html"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     add_custom_target(
         coverage-reset
@@ -152,6 +146,7 @@ if (COVER_PATH AND PROVE_PATH)
         COMMENT "Perl test suite coverage (codecovbash, useful if direct report upload not available)"
         COMMAND "${COVER_PATH}" -report codecovbash "${CMAKE_CURRENT_BINARY_DIR}/cover_db"
         DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/cover_db"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     add_dependencies(coverage-codecovbash symlinks)
 

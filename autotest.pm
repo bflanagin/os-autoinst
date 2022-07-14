@@ -4,8 +4,7 @@
 
 package autotest;
 
-use strict;
-use warnings;
+use Mojo::Base -strict, -signatures;
 
 use bmwqemu;
 use Exporter 'import';
@@ -22,7 +21,7 @@ use Mojo::File qw(path);
 
 our @EXPORT_OK = qw(loadtest $selected_console $last_milestone_console query_isotovideo);
 
-our %tests;        # scheduled or run tests
+our %tests;    # scheduled or run tests
 our @testorder;    # for keeping them in order
 our $isotovideo;
 our $process;
@@ -40,9 +39,8 @@ loadtest is called.
 
 =cut
 
-sub find_script {
-    my ($script)             = @_;
-    my $casedir              = $bmwqemu::vars{CASEDIR};
+sub find_script ($script) {
+    my $casedir = $bmwqemu::vars{CASEDIR};
     my $script_override_path = join('/', $bmwqemu::vars{ASSETDIR} // '', 'other', $script);
     if (-f $script_override_path) {
         bmwqemu::diag("Found override test module for $script: $script_override_path");
@@ -87,9 +85,9 @@ e.g. by making use of the openQA asset download feature.
 
 =cut
 
-sub loadtest {
-    my ($script, %args) = @_;
-    my $casedir     = $bmwqemu::vars{CASEDIR};
+sub loadtest ($script, %args) {
+    no utf8;    # Inline Python fails on utf8, so let's exclude it here
+    my $casedir = $bmwqemu::vars{CASEDIR};
     my $script_path = find_script($script);
     my ($name, $category) = parse_test_path($script_path);
     my $test;
@@ -127,10 +125,10 @@ sub loadtest {
         bmwqemu::serialize_state(component => 'tests', msg => "unable to load $script, check the log for the cause (e.g. syntax error)");
         die $msg;
     }
-    $test                      = $name->new($category);
-    $test->{script}            = $script;
-    $test->{fullname}          = $fullname;
-    $test->{serial_failures}   = $testapi::distri->{serial_failures}   // [];
+    $test = $name->new($category);
+    $test->{script} = $script;
+    $test->{fullname} = $fullname;
+    $test->{serial_failures} = $testapi::distri->{serial_failures} // [];
     $test->{autoinst_failures} = $testapi::distri->{autoinst_failures} // [];
 
     if (defined $args{run_args}) {
@@ -167,13 +165,12 @@ our $selected_console;
 our $last_milestone;
 our $last_milestone_console;
 
-sub parse_test_path {
-    my ($script_path) = @_;
+sub parse_test_path ($script_path) {
     unless ($script_path =~ m,(\w+)/([^/]+)\.p[my]$,) {
         die "loadtest: script path '$script_path' does not match required pattern \\w.+/[^/]+.p[my]\n";
     }
     my $category = $1;
-    my $name     = $2;
+    my $name = $2;
     if ($category ne 'other') {
         # show full folder hierarchy as category for non-sideloaded tests
         my $pattern = qr,(tests/[^/]+/)?tests/([\w/]+)/([^/]+)\.p[my]$,;
@@ -184,41 +181,38 @@ sub parse_test_path {
     return ($name, $category);
 }
 
-sub set_current_test {
-    ($current_test) = @_;
+sub set_current_test ($test) {
+    $current_test = $test;
     query_isotovideo(
         'set_current_test',
         $current_test ?
           {
-            name      => $current_test->{name},
+            name => $current_test->{name},
             full_name => $current_test->{fullname},
           }
         : {});
 }
 
-sub write_test_order {
-
+sub write_test_order () {
     my @result;
     for my $t (@testorder) {
         push(
             @result,
             {
-                name     => $t->{name},
+                name => $t->{name},
                 category => $t->{category},
-                flags    => $t->test_flags(),
-                script   => $t->{script}});
+                flags => $t->test_flags(),
+                script => $t->{script}});
     }
     bmwqemu::save_json_file(\@result, bmwqemu::result_dir . "/test_order.json");
 }
 
-sub make_snapshot {
-    my ($sname) = @_;
+sub make_snapshot ($sname) {
     bmwqemu::diag("Creating a VM snapshot $sname");
     return query_isotovideo('backend_save_snapshot', {name => $sname});
 }
 
-sub load_snapshot {
-    my ($sname) = @_;
+sub load_snapshot ($sname) {
     bmwqemu::diag("Loading a VM snapshot $sname");
     my $command = query_isotovideo('backend_load_snapshot', {name => $sname});
     # On VMware VNC console needs to be re-selected after snapshot revert,
@@ -229,8 +223,14 @@ sub load_snapshot {
     query_isotovideo('backend_start_serial_grab');
 }
 
-sub run_all {
-    my $died      = 0;
+sub _terminate () {
+    close $isotovideo;    # uncoverable statement
+    Devel::Cover::report() if Devel::Cover->can('report');    # uncoverable statement
+    _exit(0);    # uncoverable statement
+}
+
+sub run_all () {
+    my $died = 0;
     my $completed = 0;
     $tests_running = 1;
     eval { $completed = autotest::runalltests(); };
@@ -242,14 +242,10 @@ sub run_all {
         bmwqemu::save_vars(no_secret => 1);
         myjsonrpc::send_json($isotovideo, {cmd => 'tests_done', died => $died, completed => $completed});
     };
-    close $isotovideo;
-    Devel::Cover::report() if Devel::Cover->can('report');
-    _exit(0);
+    _terminate;
 }
 
-sub handle_sigterm {
-    my ($sig) = @_;
-
+sub handle_sigterm ($sig) {
     if ($current_test) {
         bmwqemu::diag("autotest received signal $sig, saving results of current test before exiting");
         $current_test->result('canceled');
@@ -258,9 +254,8 @@ sub handle_sigterm {
     _exit(1);
 }
 
-sub start_process {
+sub start_process () {
     my $child;
-
     socketpair($child, $isotovideo, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
       or die "socketpair: $!";
 
@@ -270,8 +265,8 @@ sub start_process {
     $process = process(sub {
             close $child;
             $SIG{TERM} = \&handle_sigterm;
-            $SIG{INT}  = 'DEFAULT';
-            $SIG{HUP}  = 'DEFAULT';
+            $SIG{INT} = 'DEFAULT';
+            $SIG{HUP} = 'DEFAULT';
             $SIG{CHLD} = 'DEFAULT';
 
             my $signal_blocker = signalblocker->new;
@@ -291,21 +286,19 @@ sub start_process {
 
             run_all;
         },
-        sleeptime_during_kill       => 0.1,
+        sleeptime_during_kill => 0.1,
         total_sleeptime_during_kill => 5,
-        blocking_stop               => 1,
-        separate_err                => 0,
-        set_pipes                   => 0,
-        internal_pipes              => 0)->start;
+        blocking_stop => 1,
+        separate_err => 0,
+        set_pipes => 0,
+        internal_pipes => 0)->start;
     $process->on(collected => sub { bmwqemu::diag "[" . __PACKAGE__ . "] process exited: " . shift->exit_status; });
 
     close $isotovideo;
     return ($process, $child);
 }
 
-sub query_isotovideo {
-    my ($cmd, $args) = @_;
-
+sub query_isotovideo ($cmd, $args = undef) {
     # deep copy
     my %json;
     if ($args) {
@@ -313,7 +306,7 @@ sub query_isotovideo {
     }
     $json{cmd} = $cmd;
 
-    # send the command to isotovideo
+    die "isotovideo is not initialized. Ensure that you only call test API functions from test modules, not schedule code\n" unless defined $isotovideo;
     myjsonrpc::send_json($isotovideo, \%json);
 
     # wait for response (if test is paused, this will block until resume)
@@ -322,20 +315,19 @@ sub query_isotovideo {
     return $rsp->{ret};
 }
 
-sub runalltests {
-
+sub runalltests () {
     die "ERROR: no tests loaded" unless @testorder;
 
-    my $firsttest           = $bmwqemu::vars{SKIPTO} || $testorder[0]->{fullname};
-    my $vmloaded            = 0;
+    my $firsttest = $bmwqemu::vars{SKIPTO} || $testorder[0]->{fullname};
+    my $vmloaded = 0;
     my $snapshots_supported = query_isotovideo('backend_can_handle', {function => 'snapshots'});
     bmwqemu::diag "Snapshots are " . ($snapshots_supported ? '' : 'not ') . "supported";
 
     write_test_order();
 
     for (my $testindex = 0; $testindex <= $#testorder; $testindex++) {
-        my $t        = $testorder[$testindex];
-        my $flags    = $t->test_flags();
+        my $t = $testorder[$testindex];
+        my $flags = $t->test_flags();
         my $fullname = $t->{fullname};
 
         if (!$vmloaded && $fullname eq $firsttest) {
@@ -357,7 +349,7 @@ sub runalltests {
         }
 
         my $name = $t->{name};
-        bmwqemu::modstart "starting $name $t->{script}";
+        bmwqemu::modstate "starting $name $t->{script}";
         $t->start();
 
         # avoid erasing the good vm snapshot
@@ -368,6 +360,7 @@ sub runalltests {
         eval { $t->runtest; };
         my $error = $@;    # save $@, it might be overwritten
         $t->save_test_result();
+        my $next_test = $testorder[$testindex + 1];
 
         if ($error) {
             my $msg = $error;
@@ -379,28 +372,36 @@ sub runalltests {
                 query_isotovideo('backend_save_memory_dump', {filename => $fullname});
             }
             if ($t->{fatal_failure} || $flags->{fatal} || (!exists $flags->{fatal} && !$snapshots_supported) || $bmwqemu::vars{TESTDEBUG}) {
+                my $reason = ($t->{fatal_failure} || $flags->{fatal})
+                  ? 'after a fatal test failure'
+                  : ($bmwqemu::vars{TESTDEBUG}
+                    ? 'because TESTDEBUG has been set'
+                    : 'because snapshotting is disabled/unavailable and "fatal => 0" has NOT been set explicitly');
+                bmwqemu::diag "stopping overall test execution $reason";
                 bmwqemu::stop_vm();
                 return 0;
             }
-            elsif (!$flags->{no_rollback} && $last_milestone) {
+            elsif (defined $next_test && !$flags->{no_rollback} && $last_milestone) {
                 load_snapshot('lastgood');
+                $next_test->record_resultfile('Snapshot', "Loaded snapshot because '$name' failed", result => 'ok');
                 $last_milestone->rollback_activated_consoles();
             }
         }
         else {
-            if (!$flags->{no_rollback} && $last_milestone && $flags->{always_rollback}) {
+            if (defined $next_test && !$flags->{no_rollback} && $last_milestone && $flags->{always_rollback}) {
                 load_snapshot('lastgood');
+                $next_test->record_resultfile('Snapshot', "Loaded snapshot after '$name' (always_rollback)", result => 'ok') if $next_test;
                 $last_milestone->rollback_activated_consoles();
             }
             my $makesnapshot = $bmwqemu::vars{TESTDEBUG};
             # Only make a snapshot if there is a next test and it's not a fatal milestone
-            if ($testindex ne $#testorder) {
-                my $nexttestflags = $testorder[$testindex + 1]->test_flags();
+            if (defined $next_test) {
+                my $nexttestflags = $next_test->test_flags();
                 $makesnapshot ||= $flags->{milestone} && !($nexttestflags->{milestone} && $nexttestflags->{fatal});
             }
             if ($snapshots_supported && $makesnapshot) {
                 make_snapshot('lastgood');
-                $last_milestone         = $t;
+                $last_milestone = $t;
                 $last_milestone_console = $selected_console;
             }
         }
@@ -408,10 +409,9 @@ sub runalltests {
     return 1;
 }
 
-sub loadtestdir {
-    my ($dir) = @_;
+sub loadtestdir ($dir) {
     die "need argument \$dir" unless $dir;
-    $dir =~ s/^\Q$bmwqemu::vars{CASEDIR}\E\/?//;        # legacy where absolute path is specified
+    $dir =~ s/^\Q$bmwqemu::vars{CASEDIR}\E\/?//;    # legacy where absolute path is specified
     $dir = join('/', $bmwqemu::vars{CASEDIR}, $dir);    # always load from casedir
     die "'$dir' does not exist!\n" unless -d $dir;
     foreach my $script (glob "$dir/*.pm") {

@@ -2,23 +2,22 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 package backend::null;
+use Mojo::Base 'backend::baseclass', -signatures;
 
-use Mojo::Base -strict;
+sub new ($self) { $self->SUPER::new }
 
-use base 'backend::baseclass';
+sub do_start_vm ($self, @) { {} }
 
-sub new { shift->SUPER::new }
+sub do_stop_vm ($self, @) { }
 
-sub do_start_vm { {} }
+sub do_extract_assets ($self, @) { }
 
-sub do_stop_vm { }
+sub run_cmd ($self, @) { }
 
-sub run_cmd { }
+sub can_handle ($self, @) { }
 
-sub can_handle { }
+sub is_shutdown ($self, @) { 1 }
 
-sub is_shutdown { 1 }
-
-sub stop_serial_grab { }
+sub stop_serial_grab ($self, @) { }
 
 1;
